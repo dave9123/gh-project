@@ -21,7 +21,15 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Plus, Trash2, Calculator, Eye, FileText } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  Calculator,
+  Eye,
+  FileText,
+  Upload,
+  Link,
+} from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { printingSamples } from "@/lib/printingSamples";
 
@@ -56,6 +64,7 @@ export interface Parameter {
   step?: number;
   unit?: string;
   unitsPerQuantity?: number; // How many units are in one quantity
+  isMainUnits?: boolean; // Whether this is the primary units parameter
   formula?: string;
   dependencies?: string[];
   conditional?: {
@@ -69,6 +78,42 @@ export interface Parameter {
 
 interface FormValues {
   [key: string]: any;
+}
+
+interface FileMetadata {
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  pages?: number;
+  width?: number;
+  height?: number;
+  aspectRatio?: number;
+  megapixels?: number;
+  triangles?: number;
+  vertices?: number;
+  faces?: number;
+  estimatedVertices?: number;
+  fileFormat?: string;
+  gcodeLines?: number;
+  printTimeSeconds?: number;
+  printTimeHours?: number;
+  layerHeight?: number;
+  lines?: number;
+  words?: number;
+  characters?: number;
+  sizeCategory?: string;
+  sizeValue?: number;
+  volume?: number; // in cubic millimeters
+  weightGrams?: number; // estimated weight in grams
+  materialDensity?: number; // g/cm³ used for weight calculation
+  [key: string]: any;
+}
+
+interface FileUploadConnection {
+  id: string;
+  metadataKey: string; // e.g., "pages", "width", "height"
+  parameterName: string; // which parameter to link to
+  description: string;
 }
 
 // Safe expression evaluator for basic math operations
@@ -87,6 +132,321 @@ const evaluateExpression = (expression: string): number => {
   }
 };
 
+// Extract metadata from uploaded files
+const extractFileMetadata = async (file: File): Promise<FileMetadata> => {
+  const metadata: FileMetadata = {
+    fileName: file.name,
+    fileSize: file.size,
+    fileType: file.type,
+  };
+
+  // Extract PDF page count
+  if (file.type === "application/pdf") {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      const text = new TextDecoder().decode(uint8Array);
+
+      // Simple PDF page count extraction - look for /Count in PDF structure
+      const countMatch = text.match(/\/Count\s+(\d+)/);
+      if (countMatch) {
+        metadata.pages = parseInt(countMatch[1]);
+      } else {
+        // Alternative method - count page objects
+        const pageMatches = text.match(/\/Type\s*\/Page[^s]/g);
+        metadata.pages = pageMatches ? pageMatches.length : 1;
+      }
+    } catch (error) {
+      console.warn("Could not extract PDF metadata:", error);
+      metadata.pages = 1; // Default to 1 page if extraction fails
+    }
+  }
+
+  // For images, extract dimensions and other metadata
+  if (file.type.startsWith("image/")) {
+    try {
+      const imageUrl = URL.createObjectURL(file);
+      const img = new Image();
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = reject;
+        img.src = imageUrl;
+      });
+      metadata.width = img.width;
+      metadata.height = img.height;
+      metadata.aspectRatio = +(img.width / img.height).toFixed(2);
+      metadata.megapixels = +((img.width * img.height) / 1000000).toFixed(2);
+      URL.revokeObjectURL(imageUrl);
+    } catch (error) {
+      console.warn("Could not extract image metadata:", error);
+    }
+  }
+
+  // For 3D files (STL, OBJ, etc.)
+  const fileExtension = file.name.split(".").pop()?.toLowerCase();
+  if (
+    ["stl", "obj", "ply", "3mf", "amf", "gcode"].includes(fileExtension || "")
+  ) {
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+
+      if (fileExtension === "stl") {
+        // STL file analysis
+        const isAscii = isSTLAscii(arrayBuffer);
+        metadata.fileFormat = isAscii ? "ASCII STL" : "Binary STL";
+
+        if (!isAscii) {
+          // Binary STL - extract triangle count
+          const dataView = new DataView(arrayBuffer);
+          if (arrayBuffer.byteLength >= 84) {
+            metadata.triangles = dataView.getUint32(80, true);
+            metadata.estimatedVertices = metadata.triangles * 3;
+          }
+        } else {
+          // ASCII STL - count facets
+          const text = new TextDecoder().decode(arrayBuffer);
+          const facetMatches = text.match(/facet normal/g);
+          metadata.triangles = facetMatches ? facetMatches.length : 0;
+          metadata.estimatedVertices = metadata.triangles * 3;
+        }
+
+        // Calculate volume and weight for STL files
+        if (metadata.triangles && metadata.triangles > 0) {
+          metadata.volume = calculateSTLVolume(arrayBuffer, isAscii);
+          metadata.materialDensity = materialDensities["Generic"]; // Default to PLA
+          metadata.weightGrams = +calculateWeight(
+            metadata.volume,
+            metadata.materialDensity
+          ).toFixed(2);
+        }
+      } else if (fileExtension === "obj") {
+        // OBJ file analysis
+        const text = new TextDecoder().decode(arrayBuffer);
+        const vertices = text.match(/^v\s/gm);
+        const faces = text.match(/^f\s/gm);
+        metadata.vertices = vertices ? vertices.length : 0;
+        metadata.faces = faces ? faces.length : 0;
+        metadata.fileFormat = "Wavefront OBJ";
+      } else if (fileExtension === "gcode") {
+        // G-code analysis
+        const text = new TextDecoder().decode(arrayBuffer);
+        const lines = text.split("\n");
+        metadata.gcodeLines = lines.length;
+        metadata.fileFormat = "G-code";
+
+        // Extract print time estimate if available
+        const timeMatch = text.match(/;TIME:(\d+)/);
+        if (timeMatch) {
+          metadata.printTimeSeconds = parseInt(timeMatch[1]);
+          metadata.printTimeHours = +(metadata.printTimeSeconds / 3600).toFixed(
+            2
+          );
+        }
+
+        // Extract layer height if available
+        const layerMatch = text.match(/;LAYER_HEIGHT:([\d.]+)/);
+        if (layerMatch) {
+          metadata.layerHeight = parseFloat(layerMatch[1]);
+        }
+      }
+    } catch (error) {
+      console.warn("Could not extract 3D file metadata:", error);
+      metadata.fileFormat = `${fileExtension?.toUpperCase()} file`;
+    }
+  }
+
+  // For document files
+  if (
+    [
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/vnd.ms-powerpoint",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "text/plain",
+      "text/csv",
+    ].includes(file.type)
+  ) {
+    metadata.fileFormat = getDocumentFormat(file.type);
+
+    // For text files, count lines and words
+    if (file.type === "text/plain" || file.type === "text/csv") {
+      try {
+        const text = await file.text();
+        metadata.lines = text.split("\n").length;
+        metadata.words = text
+          .split(/\s+/)
+          .filter((word) => word.length > 0).length;
+        metadata.characters = text.length;
+      } catch (error) {
+        console.warn("Could not analyze text file:", error);
+      }
+    }
+  }
+
+  // Add file size categories for easier selection
+  if (metadata.fileSize < 1024) {
+    metadata.sizeCategory = "Bytes";
+    metadata.sizeValue = metadata.fileSize;
+  } else if (metadata.fileSize < 1024 * 1024) {
+    metadata.sizeCategory = "KB";
+    metadata.sizeValue = +(metadata.fileSize / 1024).toFixed(2);
+  } else if (metadata.fileSize < 1024 * 1024 * 1024) {
+    metadata.sizeCategory = "MB";
+    metadata.sizeValue = +(metadata.fileSize / (1024 * 1024)).toFixed(2);
+  } else {
+    metadata.sizeCategory = "GB";
+    metadata.sizeValue = +(metadata.fileSize / (1024 * 1024 * 1024)).toFixed(2);
+  }
+
+  return metadata;
+};
+
+// Helper function to detect if STL is ASCII or Binary
+const isSTLAscii = (arrayBuffer: ArrayBuffer): boolean => {
+  const text = new TextDecoder().decode(arrayBuffer.slice(0, 80));
+  return text.toLowerCase().includes("solid");
+};
+
+// Helper function to calculate STL volume from triangles
+const calculateSTLVolume = (
+  arrayBuffer: ArrayBuffer,
+  isAscii: boolean
+): number => {
+  try {
+    if (isAscii) {
+      return calculateAsciiSTLVolume(arrayBuffer);
+    } else {
+      return calculateBinarySTLVolume(arrayBuffer);
+    }
+  } catch (error) {
+    console.warn("Could not calculate STL volume:", error);
+    return 0;
+  }
+};
+
+// Calculate volume for ASCII STL using signed volume of triangles
+const calculateAsciiSTLVolume = (arrayBuffer: ArrayBuffer): number => {
+  const text = new TextDecoder().decode(arrayBuffer);
+  const vertexPattern =
+    /vertex\s+([-+]?[0-9]*\.?[0-9]+)\s+([-+]?[0-9]*\.?[0-9]+)\s+([-+]?[0-9]*\.?[0-9]+)/g;
+
+  let totalVolume = 0;
+  let match;
+  const vertices: number[][] = [];
+
+  while ((match = vertexPattern.exec(text)) !== null) {
+    vertices.push([
+      parseFloat(match[1]),
+      parseFloat(match[2]),
+      parseFloat(match[3]),
+    ]);
+
+    // Process every 3 vertices (one triangle)
+    if (vertices.length === 3) {
+      const v1 = vertices[0];
+      const v2 = vertices[1];
+      const v3 = vertices[2];
+
+      // Calculate signed volume contribution of this triangle
+      totalVolume +=
+        (v1[0] * (v2[1] * v3[2] - v2[2] * v3[1]) +
+          v2[0] * (v3[1] * v1[2] - v3[2] * v1[1]) +
+          v3[0] * (v1[1] * v2[2] - v1[2] * v2[1])) /
+        6;
+
+      vertices.length = 0; // Clear for next triangle
+    }
+  }
+
+  return Math.abs(totalVolume);
+};
+
+// Calculate volume for Binary STL
+const calculateBinarySTLVolume = (arrayBuffer: ArrayBuffer): number => {
+  const dataView = new DataView(arrayBuffer);
+
+  if (arrayBuffer.byteLength < 84) return 0;
+
+  const triangleCount = dataView.getUint32(80, true);
+  let totalVolume = 0;
+
+  for (let i = 0; i < triangleCount; i++) {
+    const offset = 84 + i * 50; // Each triangle is 50 bytes after 84-byte header
+
+    // Skip normal vector (12 bytes), read vertices (36 bytes)
+    const v1 = [
+      dataView.getFloat32(offset + 12, true),
+      dataView.getFloat32(offset + 16, true),
+      dataView.getFloat32(offset + 20, true),
+    ];
+    const v2 = [
+      dataView.getFloat32(offset + 24, true),
+      dataView.getFloat32(offset + 28, true),
+      dataView.getFloat32(offset + 32, true),
+    ];
+    const v3 = [
+      dataView.getFloat32(offset + 36, true),
+      dataView.getFloat32(offset + 40, true),
+      dataView.getFloat32(offset + 44, true),
+    ];
+
+    // Calculate signed volume contribution
+    totalVolume +=
+      (v1[0] * (v2[1] * v3[2] - v2[2] * v3[1]) +
+        v2[0] * (v3[1] * v1[2] - v3[2] * v1[1]) +
+        v3[0] * (v1[1] * v2[2] - v1[2] * v2[1])) /
+      6;
+  }
+
+  return Math.abs(totalVolume);
+};
+
+// Calculate weight based on volume and material density
+const calculateWeight = (
+  volumeMM3: number,
+  materialDensity: number = 1.24
+): number => {
+  // Convert mm³ to cm³ (divide by 1000)
+  const volumeCM3 = volumeMM3 / 1000;
+  // Weight = volume × density (g/cm³)
+  return volumeCM3 * materialDensity;
+};
+
+// Common 3D printing material densities (g/cm³)
+const materialDensities = {
+  PLA: 1.24,
+  ABS: 1.05,
+  PETG: 1.27,
+  TPU: 1.2,
+  PC: 1.2,
+  ASA: 1.05,
+  Nylon: 1.14,
+  "Wood Fill": 1.28,
+  "Metal Fill": 4.0,
+  "Carbon Fiber": 1.3,
+  Generic: 1.24, // Default PLA density
+};
+
+// Helper function to get document format name
+const getDocumentFormat = (mimeType: string): string => {
+  const formats: { [key: string]: string } = {
+    "application/msword": "Microsoft Word (DOC)",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+      "Microsoft Word (DOCX)",
+    "application/vnd.ms-excel": "Microsoft Excel (XLS)",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+      "Microsoft Excel (XLSX)",
+    "application/vnd.ms-powerpoint": "Microsoft PowerPoint (PPT)",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+      "Microsoft PowerPoint (PPTX)",
+    "text/plain": "Plain Text",
+    "text/csv": "CSV File",
+  };
+  return formats[mimeType] || "Document";
+};
+
 export default function QuoteFormBuilder() {
   const [parameters, setParameters] = useState<Parameter[]>([]);
   const [activeTab, setActiveTab] = useState("builder");
@@ -99,6 +459,13 @@ export default function QuoteFormBuilder() {
       amount: number;
     }>
   >([]);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [fileMetadata, setFileMetadata] = useState<FileMetadata | null>(null);
+  const [fileConnections, setFileConnections] = useState<
+    FileUploadConnection[]
+  >([]);
+  const [showFileUpload, setShowFileUpload] = useState(false);
+  const [selectedFileType, setSelectedFileType] = useState<string>("pdf");
 
   const addParameter = () => {
     const newParam: Parameter = {
@@ -201,6 +568,28 @@ export default function QuoteFormBuilder() {
       parameters.map((param) =>
         param.id === id ? { ...param, ...updates } : param
       )
+    );
+  };
+
+  // Handle setting a parameter as main units (ensures only one can be main)
+  const setMainUnitsParameter = (id: string, isMain: boolean) => {
+    const parameter = parameters.find((p) => p.id === id);
+
+    // Only allow NumericValue parameters to be set as main units
+    if (parameter && parameter.type !== "NumericValue" && isMain) {
+      return; // Silently ignore attempt to set non-numeric as main units
+    }
+
+    setParameters(
+      parameters.map((param) => {
+        if (param.id === id) {
+          return { ...param, isMainUnits: isMain };
+        } else if (isMain && param.isMainUnits) {
+          // Remove main units flag from other parameters
+          return { ...param, isMainUnits: false };
+        }
+        return param;
+      })
     );
   };
 
@@ -320,6 +709,12 @@ export default function QuoteFormBuilder() {
       }
     });
 
+    // Get the main units parameter value
+    const mainUnitsParam = parameters.find((p) => p.isMainUnits);
+    const mainUnitsValue = mainUnitsParam
+      ? Number.parseFloat(calculatedValues[mainUnitsParam.name]) || 0
+      : 1;
+
     // Calculate unit price for each parameter (excluding quantity)
     parameters
       .filter(
@@ -333,9 +728,10 @@ export default function QuoteFormBuilder() {
         let paramTotal = 0;
         let description = "";
 
+        // Base price is per QTY (per item ordered)
         if (param.pricing.base_price) {
           paramTotal += param.pricing.base_price;
-          description += `Base: $${param.pricing.base_price}`;
+          description += `Base: $${param.pricing.base_price} per item`;
         }
 
         if (param.type === "FixedOption") {
@@ -343,18 +739,23 @@ export default function QuoteFormBuilder() {
             (opt) => opt.value === value
           );
           if (selectedOption) {
+            // Base price for option is per QTY
             if (selectedOption.pricing.base_price) {
               paramTotal += selectedOption.pricing.base_price;
               description +=
                 (description ? " + " : "") +
-                `Option: $${selectedOption.pricing.base_price}`;
+                `Option: $${selectedOption.pricing.base_price} per item`;
             }
+            // Unit price for option scales with main units
             if (selectedOption.pricing.unit_price) {
-              const unitCost = selectedOption.pricing.unit_price;
+              const unitCost =
+                selectedOption.pricing.unit_price * mainUnitsValue;
               paramTotal += unitCost;
               description +=
                 (description ? " + " : "") +
-                `$${selectedOption.pricing.unit_price} per unit`;
+                `$${selectedOption.pricing.unit_price} × ${mainUnitsValue} ${
+                  mainUnitsParam?.unit || "units"
+                }`;
             }
             if (selectedOption.pricing.multiplier) {
               paramTotal *= selectedOption.pricing.multiplier;
@@ -368,15 +769,19 @@ export default function QuoteFormBuilder() {
           param.type === "DerivedCalc"
         ) {
           const numValue = Number.parseFloat(value) || 0;
-          const unitsPerQty = param.unitsPerQuantity || 1; // Default to 1 if not specified
+          const unitsPerQty = param.unitsPerQuantity || 1;
           const totalUnits = numValue * unitsPerQty;
 
+          // Unit price scales with main units if this param has unit pricing
           if (param.pricing.unit_price) {
-            const unitCost = totalUnits * param.pricing.unit_price;
+            const unitCost =
+              totalUnits * param.pricing.unit_price * mainUnitsValue;
             paramTotal += unitCost;
             description +=
               (description ? " + " : "") +
-              `${totalUnits} units (${numValue} × ${unitsPerQty}) × $${param.pricing.unit_price}`;
+              `${totalUnits} ${param.unit || "units"} × $${
+                param.pricing.unit_price
+              } × ${mainUnitsValue} ${mainUnitsParam?.unit || "main units"}`;
           }
 
           if (
@@ -584,6 +989,89 @@ export default function QuoteFormBuilder() {
     }
   };
 
+  const handleFileUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setUploadedFile(file);
+
+    try {
+      const metadata = await extractFileMetadata(file);
+      setFileMetadata(metadata);
+
+      // Apply existing connections
+      fileConnections.forEach((connection) => {
+        const metadataValue = metadata[connection.metadataKey];
+        if (metadataValue !== undefined) {
+          updateFormValue(connection.parameterName, metadataValue.toString());
+        }
+      });
+    } catch (error) {
+      console.error("Error processing file:", error);
+    }
+  };
+
+  const addFileConnection = () => {
+    if (!fileMetadata) return;
+
+    const newConnection: FileUploadConnection = {
+      id: `connection_${Date.now()}`,
+      metadataKey: "pages",
+      parameterName: "",
+      description: "Link file pages to parameter",
+    };
+    setFileConnections([...fileConnections, newConnection]);
+  };
+
+  const updateFileConnection = (
+    id: string,
+    updates: Partial<FileUploadConnection>
+  ) => {
+    setFileConnections((connections) =>
+      connections.map((conn) =>
+        conn.id === id ? { ...conn, ...updates } : conn
+      )
+    );
+  };
+
+  const deleteFileConnection = (id: string) => {
+    setFileConnections((connections) =>
+      connections.filter((conn) => conn.id !== id)
+    );
+  };
+
+  const applyFileConnection = (connection: FileUploadConnection) => {
+    if (!fileMetadata) return;
+
+    const metadataValue = fileMetadata[connection.metadataKey];
+    if (metadataValue !== undefined) {
+      updateFormValue(connection.parameterName, metadataValue.toString());
+    }
+  };
+
+  // Generate file accept attribute based on selected file type
+  const getFileAcceptString = () => {
+    const fileTypeMap: { [key: string]: string[] } = {
+      pdf: [".pdf"],
+      images: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"],
+      "3d": [".stl", ".obj", ".ply", ".3mf", ".amf", ".gcode"],
+      documents: [".doc", ".docx", ".txt"],
+    };
+
+    return fileTypeMap[selectedFileType]?.join(",") || "";
+  };
+
+  // Set file type selection (only one at a time)
+  const selectFileType = (fileType: string) => {
+    setSelectedFileType(fileType);
+    // Clear uploaded file when switching types to prevent metadata conflicts
+    setUploadedFile(null);
+    setFileMetadata(null);
+    setFileConnections([]);
+  };
+
   console.log(parameters, JSON.stringify(parameters));
 
   return (
@@ -611,7 +1099,24 @@ export default function QuoteFormBuilder() {
 
         <TabsContent value="builder" className="space-y-6">
           <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold">Parameters</h2>
+            <div>
+              <h2 className="text-xl font-semibold">Parameters</h2>
+              {(() => {
+                const mainUnitsParam = parameters.find((p) => p.isMainUnits);
+                return mainUnitsParam ? (
+                  <div className="text-sm text-muted-foreground mt-1">
+                    Main units parameter:{" "}
+                    <span className="font-medium">
+                      {mainUnitsParam.label || mainUnitsParam.name}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-sm text-muted-foreground mt-1">
+                    No main units parameter set
+                  </div>
+                );
+              })()}
+            </div>
             <div className="flex gap-2">
               <Select onValueChange={loadSample}>
                 <SelectTrigger className="w-48">
@@ -656,6 +1161,14 @@ export default function QuoteFormBuilder() {
                       {param.conditional && (
                         <Badge variant="secondary" className="text-xs">
                           Conditional
+                        </Badge>
+                      )}
+                      {param.isMainUnits && (
+                        <Badge
+                          variant="default"
+                          className="text-xs font-medium"
+                        >
+                          MAIN UNITS
                         </Badge>
                       )}
                       <CardTitle className="text-lg">
@@ -788,7 +1301,7 @@ export default function QuoteFormBuilder() {
                           <div className="grid grid-cols-3 gap-2">
                             <Input
                               type="number"
-                              placeholder="Base Price"
+                              placeholder="Base Price (per QTY)"
                               value={option.pricing.base_price || ""}
                               onChange={(e) =>
                                 updateOption(param.id, index, {
@@ -804,7 +1317,7 @@ export default function QuoteFormBuilder() {
                             <Input
                               type="number"
                               step="0.01"
-                              placeholder="Unit Price"
+                              placeholder="Unit Price (per main unit)"
                               value={option.pricing.unit_price || ""}
                               onChange={(e) =>
                                 updateOption(param.id, index, {
@@ -884,23 +1397,54 @@ export default function QuoteFormBuilder() {
                           }
                         />
                       </div>
-                      <div>
-                        <Label className="text-sm">Units per Quantity</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          placeholder="e.g., 1000 (if 1 quantity = 1000 units)"
-                          value={param.unitsPerQuantity || ""}
-                          onChange={(e) =>
-                            updateParameter(param.id, {
-                              unitsPerQuantity:
-                                Number.parseFloat(e.target.value) || undefined,
-                            })
-                          }
-                        />
-                        <div className="text-xs text-muted-foreground mt-1">
-                          How many units are included in one quantity item
+                      <div className="space-y-3">
+                        <div>
+                          <Label className="text-sm">Units per Quantity</Label>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            placeholder="e.g., 1000 (if 1 quantity = 1000 units)"
+                            value={param.unitsPerQuantity || ""}
+                            onChange={(e) =>
+                              updateParameter(param.id, {
+                                unitsPerQuantity:
+                                  Number.parseFloat(e.target.value) ||
+                                  undefined,
+                              })
+                            }
+                          />
+                          <div className="text-xs text-muted-foreground mt-1">
+                            How many units are included in one quantity item
+                          </div>
                         </div>
+
+                        <div className="flex items-center space-x-2">
+                          <Switch
+                            id={`main-units-${param.id}`}
+                            checked={!!param.isMainUnits}
+                            onCheckedChange={(checked) =>
+                              setMainUnitsParameter(param.id, checked)
+                            }
+                          />
+                          <Label
+                            htmlFor={`main-units-${param.id}`}
+                            className="text-sm"
+                          >
+                            Set as main units parameter
+                          </Label>
+                          {param.isMainUnits && (
+                            <Badge variant="default" className="text-xs">
+                              MAIN UNITS
+                            </Badge>
+                          )}
+                        </div>
+                        {param.isMainUnits && (
+                          <div className="text-xs text-muted-foreground">
+                            This parameter will be used as the primary units for
+                            calculations. Only one parameter can be the main
+                            units.
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1109,114 +1653,144 @@ export default function QuoteFormBuilder() {
                     )}
                   </div>
 
-                  <Separator />
-                  <div>
-                    <Label className="text-base font-medium">
-                      Pricing Rules
-                    </Label>
-                    <div className="grid grid-cols-2 gap-4 mt-2">
+                  {param.type !== "FixedOption" && (
+                    <>
+                      <Separator />
                       <div>
-                        <Label className="text-sm">Base Price ($)</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={param.pricing.base_price || ""}
-                          onChange={(e) =>
-                            updateParameter(param.id, {
-                              pricing: {
-                                ...param.pricing,
-                                base_price:
-                                  Number.parseFloat(e.target.value) ||
-                                  undefined,
-                              },
-                            })
-                          }
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-sm">Unit Price ($)</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={param.pricing.unit_price || ""}
-                          onChange={(e) =>
-                            updateParameter(param.id, {
-                              pricing: {
-                                ...param.pricing,
-                                unit_price:
-                                  Number.parseFloat(e.target.value) ||
-                                  undefined,
-                              },
-                            })
-                          }
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-sm">Multiplier</Label>
-                        <Input
-                          type="number"
-                          step="0.01"
-                          value={param.pricing.multiplier || ""}
-                          onChange={(e) =>
-                            updateParameter(param.id, {
-                              pricing: {
-                                ...param.pricing,
-                                multiplier:
-                                  Number.parseFloat(e.target.value) ||
-                                  undefined,
-                              },
-                            })
-                          }
-                        />
-                      </div>
-                      <div>
-                        <Label className="text-sm">Step Pricing</Label>
-                        <div className="flex gap-1">
-                          <Input
-                            type="number"
-                            placeholder="Threshold"
-                            value={param.pricing.step_pricing?.threshold || ""}
-                            onChange={(e) =>
-                              updateParameter(param.id, {
-                                pricing: {
-                                  ...param.pricing,
-                                  step_pricing: {
-                                    ...param.pricing.step_pricing,
-                                    threshold:
-                                      Number.parseFloat(e.target.value) || 0,
-                                    step_amount:
-                                      param.pricing.step_pricing?.step_amount ||
-                                      0,
+                        <Label className="text-base font-medium">
+                          Pricing Rules
+                        </Label>
+                        <div className="grid grid-cols-2 gap-4 mt-2">
+                          <div>
+                            <Label className="text-sm">
+                              Base Price ($ per QTY)
+                            </Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="Fixed cost per item ordered"
+                              value={param.pricing.base_price || ""}
+                              onChange={(e) =>
+                                updateParameter(param.id, {
+                                  pricing: {
+                                    ...param.pricing,
+                                    base_price:
+                                      Number.parseFloat(e.target.value) ||
+                                      undefined,
                                   },
-                                },
-                              })
-                            }
-                          />
-                          <Input
-                            type="number"
-                            placeholder="Amount"
-                            value={
-                              param.pricing.step_pricing?.step_amount || ""
-                            }
-                            onChange={(e) =>
-                              updateParameter(param.id, {
-                                pricing: {
-                                  ...param.pricing,
-                                  step_pricing: {
-                                    threshold:
-                                      param.pricing.step_pricing?.threshold ||
-                                      0,
-                                    step_amount:
-                                      Number.parseFloat(e.target.value) || 0,
+                                })
+                              }
+                            />
+                            <div className="text-xs text-muted-foreground mt-1">
+                              Fixed cost added per item in the order
+                            </div>
+                          </div>
+                          <div>
+                            <Label className="text-sm">
+                              Unit Price ($ per main unit)
+                            </Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="Cost that scales with main units"
+                              value={param.pricing.unit_price || ""}
+                              onChange={(e) =>
+                                updateParameter(param.id, {
+                                  pricing: {
+                                    ...param.pricing,
+                                    unit_price:
+                                      Number.parseFloat(e.target.value) ||
+                                      undefined,
                                   },
-                                },
-                              })
-                            }
-                          />
+                                })
+                              }
+                            />
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {(() => {
+                                const mainUnitsParam = parameters.find(
+                                  (p) => p.isMainUnits
+                                );
+                                return mainUnitsParam
+                                  ? `Scales with ${
+                                      mainUnitsParam.label ||
+                                      mainUnitsParam.name
+                                    } (${mainUnitsParam.unit || "units"})`
+                                  : "Set a main units parameter first";
+                              })()}
+                            </div>
+                          </div>
+                          <div>
+                            <Label className="text-sm">Multiplier</Label>
+                            <Input
+                              type="number"
+                              step="0.01"
+                              value={param.pricing.multiplier || ""}
+                              onChange={(e) =>
+                                updateParameter(param.id, {
+                                  pricing: {
+                                    ...param.pricing,
+                                    multiplier:
+                                      Number.parseFloat(e.target.value) ||
+                                      undefined,
+                                  },
+                                })
+                              }
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-sm">Step Pricing</Label>
+                            <div className="flex gap-1">
+                              <Input
+                                type="number"
+                                placeholder="Threshold"
+                                value={
+                                  param.pricing.step_pricing?.threshold || ""
+                                }
+                                onChange={(e) =>
+                                  updateParameter(param.id, {
+                                    pricing: {
+                                      ...param.pricing,
+                                      step_pricing: {
+                                        ...param.pricing.step_pricing,
+                                        threshold:
+                                          Number.parseFloat(e.target.value) ||
+                                          0,
+                                        step_amount:
+                                          param.pricing.step_pricing
+                                            ?.step_amount || 0,
+                                      },
+                                    },
+                                  })
+                                }
+                              />
+                              <Input
+                                type="number"
+                                placeholder="Amount"
+                                value={
+                                  param.pricing.step_pricing?.step_amount || ""
+                                }
+                                onChange={(e) =>
+                                  updateParameter(param.id, {
+                                    pricing: {
+                                      ...param.pricing,
+                                      step_pricing: {
+                                        threshold:
+                                          param.pricing.step_pricing
+                                            ?.threshold || 0,
+                                        step_amount:
+                                          Number.parseFloat(e.target.value) ||
+                                          0,
+                                      },
+                                    },
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  </div>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             ))}
@@ -1225,135 +1799,735 @@ export default function QuoteFormBuilder() {
 
         <TabsContent value="preview" className="space-y-6">
           <div className="grid lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Calculator className="w-5 h-5" />
-                  Quote Form
-                </CardTitle>
-                <CardDescription>
-                  Fill out the form to get an instant quote
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {parameters
-                  .filter((param) => isParameterVisible(param, formValues))
-                  .map((param) => (
-                    <div key={param.id} className="space-y-2">
-                      <Label htmlFor={`form-${param.id}`}>
-                        {param.label || param.name}
-                        {param.required && (
-                          <span className="text-destructive ml-1">*</span>
-                        )}
-                        {param.unit && (
-                          <span className="text-muted-foreground ml-1">
-                            ({param.unit})
-                          </span>
-                        )}
-                        {param.unitsPerQuantity &&
-                          param.unitsPerQuantity > 1 && (
-                            <span className="text-muted-foreground ml-1 text-xs">
-                              [{param.unitsPerQuantity} units per quantity]
-                            </span>
-                          )}
-                        {param.conditional && (
-                          <Badge variant="secondary" className="ml-2 text-xs">
-                            Conditional
-                          </Badge>
-                        )}
-                      </Label>
-
-                      {param.type === "FixedOption" && (
-                        <Select
-                          value={formValues[param.name] || ""}
-                          onValueChange={(value) => {
-                            updateFormValue(param.name, value);
-                            const dependentParams = parameters.filter(
-                              (p) =>
-                                p.conditional?.parentParameter === param.name
-                            );
-                            dependentParams.forEach((depParam) => {
-                              updateFormValue(depParam.name, "");
-                            });
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select an option" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {param.options && param.options.length > 0 ? (
-                              param.options
-                                .filter(
-                                  (option) =>
-                                    option.value &&
-                                    option.value.trim() !== "" &&
-                                    option.label &&
-                                    option.label.trim() !== ""
-                                )
-                                .map((option, index) => (
-                                  <SelectItem
-                                    key={`${param.id}-${index}`}
-                                    value={option.value}
-                                  >
-                                    {option.label}
-                                  </SelectItem>
-                                ))
-                            ) : (
-                              <SelectItem
-                                key="no-options"
-                                value="__no_options__"
-                                disabled
-                              >
-                                No options available
-                              </SelectItem>
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Calculator className="w-5 h-5" />
+                      <CardTitle>Quote Form</CardTitle>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowFileUpload(!showFileUpload)}
+                      className="flex items-center gap-2"
+                    >
+                      <Upload className="w-4 h-4" />
+                      File Upload
+                    </Button>
+                  </div>
+                  <CardDescription>
+                    Fill out the form to get an instant quote
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {parameters
+                    .filter((param) => isParameterVisible(param, formValues))
+                    .map((param) => (
+                      <div key={param.id} className="space-y-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Label
+                            htmlFor={`form-${param.id}`}
+                            className="flex-shrink-0"
+                          >
+                            {param.label || param.name}
+                            {param.unit && (
+                              <span className="text-muted-foreground ml-1">
+                                ({param.unit})
+                              </span>
                             )}
-                          </SelectContent>
-                        </Select>
-                      )}
+                          </Label>
+                          {param.required && (
+                            <Badge
+                              variant="destructive"
+                              className="text-xs font-medium px-2 py-1"
+                            >
+                              REQUIRED
+                            </Badge>
+                          )}
+                          {param.unitsPerQuantity &&
+                            param.unitsPerQuantity > 1 && (
+                              <Badge variant="outline" className="text-xs">
+                                {param.unitsPerQuantity} units per quantity
+                              </Badge>
+                            )}
+                          {param.isMainUnits && (
+                            <Badge
+                              variant="default"
+                              className="text-xs font-medium px-2 py-1"
+                            >
+                              MAIN UNITS
+                            </Badge>
+                          )}
+                          {param.conditional && (
+                            <Badge variant="secondary" className="text-xs">
+                              Conditional
+                            </Badge>
+                          )}
+                        </div>
 
-                      {param.type === "NumericValue" && (
-                        <Input
-                          id={`form-${param.id}`}
-                          type="number"
-                          min={param.min}
-                          max={param.max}
-                          step={param.step}
-                          value={formValues[param.name] || ""}
-                          onChange={(e) =>
-                            updateFormValue(param.name, e.target.value)
-                          }
-                        />
-                      )}
-
-                      {param.type === "DerivedCalc" && (
-                        <div className="space-y-2">
-                          <Input
-                            id={`form-${param.id}`}
-                            value={
-                              typeof formValues[param.name] === "number"
-                                ? formValues[param.name].toFixed(2)
-                                : formValues[param.name] || "0.00"
-                            }
-                            disabled
-                            className="bg-muted font-mono"
-                          />
-                          {param.formula && (
-                            <div className="text-xs text-muted-foreground">
-                              Formula: {param.formula}
+                        {param.type === "FixedOption" && (
+                          <Select
+                            value={formValues[param.name] || ""}
+                            onValueChange={(value) => {
+                              updateFormValue(param.name, value);
+                              const dependentParams = parameters.filter(
+                                (p) =>
+                                  p.conditional?.parentParameter === param.name
+                              );
+                              dependentParams.forEach((depParam) => {
+                                updateFormValue(depParam.name, "");
+                              });
+                            }}
+                          >
+                            <SelectTrigger
+                              className={
+                                param.required &&
+                                (!formValues[param.name] ||
+                                  formValues[param.name] === "")
+                                  ? "border-destructive ring-destructive/20 ring-2"
+                                  : ""
+                              }
+                            >
+                              <SelectValue
+                                placeholder={
+                                  param.required
+                                    ? "Please select an option (Required)"
+                                    : "Select an option"
+                                }
+                              />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {param.options && param.options.length > 0 ? (
+                                param.options
+                                  .filter(
+                                    (option) =>
+                                      option.value &&
+                                      option.value.trim() !== "" &&
+                                      option.label &&
+                                      option.label.trim() !== ""
+                                  )
+                                  .map((option, index) => (
+                                    <SelectItem
+                                      key={`${param.id}-${index}`}
+                                      value={option.value}
+                                    >
+                                      {option.label}
+                                    </SelectItem>
+                                  ))
+                              ) : (
+                                <SelectItem
+                                  key="no-options"
+                                  value="__no_options__"
+                                  disabled
+                                >
+                                  No options available
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        )}
+                        {param.type === "FixedOption" &&
+                          param.required &&
+                          (!formValues[param.name] ||
+                            formValues[param.name] === "") && (
+                            <div className="text-xs text-destructive font-medium flex items-center gap-1">
+                              <span className="w-1 h-1 bg-destructive rounded-full"></span>
+                              This field is required
                             </div>
                           )}
-                          {param.dependencies &&
-                            param.dependencies.length > 0 && (
+
+                        {param.type === "NumericValue" && (
+                          <>
+                            <Input
+                              id={`form-${param.id}`}
+                              type="number"
+                              min={param.min}
+                              max={param.max}
+                              step={param.step}
+                              value={formValues[param.name] || ""}
+                              onChange={(e) =>
+                                updateFormValue(param.name, e.target.value)
+                              }
+                              placeholder={
+                                param.required
+                                  ? "Enter value (Required)"
+                                  : "Enter value"
+                              }
+                              className={
+                                param.required &&
+                                (!formValues[param.name] ||
+                                  formValues[param.name] === "")
+                                  ? "border-destructive ring-destructive/20 ring-2"
+                                  : ""
+                              }
+                            />
+                            {param.required &&
+                              (!formValues[param.name] ||
+                                formValues[param.name] === "") && (
+                                <div className="text-xs text-destructive font-medium flex items-center gap-1">
+                                  <span className="w-1 h-1 bg-destructive rounded-full"></span>
+                                  This field is required
+                                </div>
+                              )}
+                          </>
+                        )}
+
+                        {param.type === "DerivedCalc" && (
+                          <div className="space-y-2">
+                            <Input
+                              id={`form-${param.id}`}
+                              value={
+                                typeof formValues[param.name] === "number"
+                                  ? formValues[param.name].toFixed(2)
+                                  : formValues[param.name] || "0.00"
+                              }
+                              disabled
+                              className="bg-muted font-mono"
+                            />
+                            {param.formula && (
                               <div className="text-xs text-muted-foreground">
-                                Depends on: {param.dependencies.join(", ")}
+                                Formula: {param.formula}
                               </div>
                             )}
+                            {param.dependencies &&
+                              param.dependencies.length > 0 && (
+                                <div className="text-xs text-muted-foreground">
+                                  Depends on: {param.dependencies.join(", ")}
+                                </div>
+                              )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                </CardContent>
+              </Card>
+
+              {showFileUpload && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Upload className="w-5 h-5" />
+                      File Upload & Metadata Extraction
+                    </CardTitle>
+                    <CardDescription>
+                      Upload files to automatically extract metadata and link to
+                      form parameters
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-3">
+                      <div>
+                        <Label className="text-sm font-medium">
+                          File Type to Accept (Choose One)
+                        </Label>
+                        <div className="grid grid-cols-2 gap-2 mt-2">
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              id="filetype-pdf"
+                              name="fileType"
+                              checked={selectedFileType === "pdf"}
+                              onChange={() => selectFileType("pdf")}
+                              className="rounded"
+                            />
+                            <Label htmlFor="filetype-pdf" className="text-sm">
+                              PDF Documents
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              id="filetype-images"
+                              name="fileType"
+                              checked={selectedFileType === "images"}
+                              onChange={() => selectFileType("images")}
+                              className="rounded"
+                            />
+                            <Label
+                              htmlFor="filetype-images"
+                              className="text-sm"
+                            >
+                              Images (JPG, PNG, etc.)
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              id="filetype-3d"
+                              name="fileType"
+                              checked={selectedFileType === "3d"}
+                              onChange={() => selectFileType("3d")}
+                              className="rounded"
+                            />
+                            <Label htmlFor="filetype-3d" className="text-sm">
+                              3D Files (STL, OBJ, etc.)
+                            </Label>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="radio"
+                              id="filetype-documents"
+                              name="fileType"
+                              checked={selectedFileType === "documents"}
+                              onChange={() => selectFileType("documents")}
+                              className="rounded"
+                            />
+                            <Label
+                              htmlFor="filetype-documents"
+                              className="text-sm"
+                            >
+                              Text Documents (DOC, TXT)
+                            </Label>
+                          </div>
                         </div>
-                      )}
+                      </div>
+
+                      <div>
+                        <Label htmlFor="file-upload">Upload File</Label>
+                        <Input
+                          id="file-upload"
+                          type="file"
+                          accept={getFileAcceptString()}
+                          onChange={handleFileUpload}
+                          className="mt-1"
+                          disabled={!selectedFileType}
+                        />
+                        {!selectedFileType ? (
+                          <div className="text-xs text-destructive mt-1">
+                            Please select a file type above to enable upload
+                          </div>
+                        ) : (
+                          <div className="text-xs text-muted-foreground mt-1">
+                            <div className="mb-1">
+                              <strong>Currently accepting:</strong>
+                            </div>
+                            <div className="space-y-1">
+                              {selectedFileType === "pdf" && (
+                                <div>
+                                  <strong>PDF:</strong> Documents with page
+                                  counting
+                                </div>
+                              )}
+                              {selectedFileType === "images" && (
+                                <div>
+                                  <strong>Images:</strong> JPG, PNG, GIF, BMP,
+                                  WebP, SVG
+                                </div>
+                              )}
+                              {selectedFileType === "3d" && (
+                                <div>
+                                  <strong>3D Files:</strong> STL, OBJ, PLY, 3MF,
+                                  AMF, G-code
+                                </div>
+                              )}
+                              {selectedFileType === "documents" && (
+                                <div>
+                                  <strong>Documents:</strong> DOC, DOCX, TXT
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  ))}
-              </CardContent>
-            </Card>
+
+                    {uploadedFile && fileMetadata && (
+                      <>
+                        <div className="border rounded-lg p-3 bg-muted/50">
+                          <h4 className="font-medium mb-2">File Information</h4>
+                          <div className="space-y-1 text-sm">
+                            <div>
+                              <strong>Name:</strong> {fileMetadata.fileName}
+                            </div>
+                            <div>
+                              <strong>Size:</strong> {fileMetadata.sizeValue}{" "}
+                              {fileMetadata.sizeCategory}
+                            </div>
+                            <div>
+                              <strong>Type:</strong>{" "}
+                              {fileMetadata.fileFormat || fileMetadata.fileType}
+                            </div>
+
+                            {/* PDF specific metadata */}
+                            {fileMetadata.pages && (
+                              <div>
+                                <strong>Pages:</strong> {fileMetadata.pages}
+                              </div>
+                            )}
+
+                            {/* Image specific metadata */}
+                            {fileMetadata.width && fileMetadata.height && (
+                              <>
+                                <div>
+                                  <strong>Dimensions:</strong>{" "}
+                                  {fileMetadata.width} × {fileMetadata.height}px
+                                </div>
+                                {fileMetadata.aspectRatio && (
+                                  <div>
+                                    <strong>Aspect Ratio:</strong>{" "}
+                                    {fileMetadata.aspectRatio}:1
+                                  </div>
+                                )}
+                                {fileMetadata.megapixels && (
+                                  <div>
+                                    <strong>Megapixels:</strong>{" "}
+                                    {fileMetadata.megapixels}MP
+                                  </div>
+                                )}
+                              </>
+                            )}
+
+                            {/* 3D file specific metadata */}
+                            {fileMetadata.triangles && (
+                              <div>
+                                <strong>Triangles:</strong>{" "}
+                                {fileMetadata.triangles.toLocaleString()}
+                              </div>
+                            )}
+                            {fileMetadata.vertices && (
+                              <div>
+                                <strong>Vertices:</strong>{" "}
+                                {fileMetadata.vertices.toLocaleString()}
+                              </div>
+                            )}
+                            {fileMetadata.faces && (
+                              <div>
+                                <strong>Faces:</strong>{" "}
+                                {fileMetadata.faces.toLocaleString()}
+                              </div>
+                            )}
+                            {fileMetadata.estimatedVertices &&
+                              !fileMetadata.vertices && (
+                                <div>
+                                  <strong>Est. Vertices:</strong>{" "}
+                                  {fileMetadata.estimatedVertices.toLocaleString()}
+                                </div>
+                              )}
+
+                            {/* G-code specific metadata */}
+                            {fileMetadata.gcodeLines && (
+                              <div>
+                                <strong>G-code Lines:</strong>{" "}
+                                {fileMetadata.gcodeLines.toLocaleString()}
+                              </div>
+                            )}
+                            {fileMetadata.printTimeHours && (
+                              <div>
+                                <strong>Print Time:</strong>{" "}
+                                {fileMetadata.printTimeHours}h
+                              </div>
+                            )}
+                            {fileMetadata.layerHeight && (
+                              <div>
+                                <strong>Layer Height:</strong>{" "}
+                                {fileMetadata.layerHeight}mm
+                              </div>
+                            )}
+
+                            {/* Volume and weight for 3D files */}
+                            {fileMetadata.volume && (
+                              <div>
+                                <strong>Volume:</strong>{" "}
+                                {fileMetadata.volume < 1000
+                                  ? `${fileMetadata.volume.toFixed(2)} mm³`
+                                  : `${(fileMetadata.volume / 1000).toFixed(
+                                      2
+                                    )} cm³`}
+                              </div>
+                            )}
+                            {fileMetadata.weightGrams && (
+                              <div>
+                                <strong>Est. Weight:</strong>{" "}
+                                {fileMetadata.weightGrams < 1000
+                                  ? `${fileMetadata.weightGrams.toFixed(2)}g`
+                                  : `${(
+                                      fileMetadata.weightGrams / 1000
+                                    ).toFixed(2)}kg`}{" "}
+                                (PLA)
+                              </div>
+                            )}
+
+                            {/* Text file specific metadata */}
+                            {fileMetadata.lines && (
+                              <div>
+                                <strong>Lines:</strong>{" "}
+                                {fileMetadata.lines.toLocaleString()}
+                              </div>
+                            )}
+                            {fileMetadata.words && (
+                              <div>
+                                <strong>Words:</strong>{" "}
+                                {fileMetadata.words.toLocaleString()}
+                              </div>
+                            )}
+                            {fileMetadata.characters && (
+                              <div>
+                                <strong>Characters:</strong>{" "}
+                                {fileMetadata.characters.toLocaleString()}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Label>Metadata Connections</Label>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={addFileConnection}
+                              className="flex items-center gap-2"
+                            >
+                              <Link className="w-4 h-4" />
+                              Add Connection
+                            </Button>
+                          </div>
+
+                          {fileConnections.map((connection) => (
+                            <div
+                              key={connection.id}
+                              className="border rounded-lg p-3 space-y-3"
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium">
+                                  Metadata Connection
+                                </span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() =>
+                                    deleteFileConnection(connection.id)
+                                  }
+                                  className="text-destructive hover:text-destructive"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <Label className="text-xs">
+                                    Metadata Field
+                                  </Label>
+                                  <Select
+                                    value={connection.metadataKey}
+                                    onValueChange={(value) =>
+                                      updateFileConnection(connection.id, {
+                                        metadataKey: value,
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {/* PDF metadata */}
+                                      {fileMetadata.pages && (
+                                        <SelectItem value="pages">
+                                          Pages ({fileMetadata.pages})
+                                        </SelectItem>
+                                      )}
+
+                                      {/* Image metadata */}
+                                      {fileMetadata.width && (
+                                        <SelectItem value="width">
+                                          Width ({fileMetadata.width}px)
+                                        </SelectItem>
+                                      )}
+                                      {fileMetadata.height && (
+                                        <SelectItem value="height">
+                                          Height ({fileMetadata.height}px)
+                                        </SelectItem>
+                                      )}
+                                      {fileMetadata.aspectRatio && (
+                                        <SelectItem value="aspectRatio">
+                                          Aspect Ratio (
+                                          {fileMetadata.aspectRatio}:1)
+                                        </SelectItem>
+                                      )}
+                                      {fileMetadata.megapixels && (
+                                        <SelectItem value="megapixels">
+                                          Megapixels ({fileMetadata.megapixels}
+                                          MP)
+                                        </SelectItem>
+                                      )}
+
+                                      {/* 3D file metadata */}
+                                      {fileMetadata.triangles && (
+                                        <SelectItem value="triangles">
+                                          Triangles (
+                                          {fileMetadata.triangles.toLocaleString()}
+                                          )
+                                        </SelectItem>
+                                      )}
+                                      {fileMetadata.vertices && (
+                                        <SelectItem value="vertices">
+                                          Vertices (
+                                          {fileMetadata.vertices.toLocaleString()}
+                                          )
+                                        </SelectItem>
+                                      )}
+                                      {fileMetadata.faces && (
+                                        <SelectItem value="faces">
+                                          Faces (
+                                          {fileMetadata.faces.toLocaleString()})
+                                        </SelectItem>
+                                      )}
+                                      {fileMetadata.estimatedVertices &&
+                                        !fileMetadata.vertices && (
+                                          <SelectItem value="estimatedVertices">
+                                            Est. Vertices (
+                                            {fileMetadata.estimatedVertices.toLocaleString()}
+                                            )
+                                          </SelectItem>
+                                        )}
+                                      {fileMetadata.gcodeLines && (
+                                        <SelectItem value="gcodeLines">
+                                          G-code Lines (
+                                          {fileMetadata.gcodeLines.toLocaleString()}
+                                          )
+                                        </SelectItem>
+                                      )}
+                                      {fileMetadata.printTimeHours && (
+                                        <SelectItem value="printTimeHours">
+                                          Print Time (
+                                          {fileMetadata.printTimeHours}h)
+                                        </SelectItem>
+                                      )}
+                                      {fileMetadata.printTimeSeconds && (
+                                        <SelectItem value="printTimeSeconds">
+                                          Print Time (Seconds) (
+                                          {fileMetadata.printTimeSeconds})
+                                        </SelectItem>
+                                      )}
+                                      {fileMetadata.layerHeight && (
+                                        <SelectItem value="layerHeight">
+                                          Layer Height (
+                                          {fileMetadata.layerHeight}mm)
+                                        </SelectItem>
+                                      )}
+
+                                      {/* Volume and weight metadata */}
+                                      {fileMetadata.volume && (
+                                        <SelectItem value="volume">
+                                          Volume (
+                                          {fileMetadata.volume < 1000
+                                            ? `${fileMetadata.volume.toFixed(
+                                                2
+                                              )} mm³`
+                                            : `${(
+                                                fileMetadata.volume / 1000
+                                              ).toFixed(2)} cm³`}
+                                          )
+                                        </SelectItem>
+                                      )}
+                                      {fileMetadata.weightGrams && (
+                                        <SelectItem value="weightGrams">
+                                          Weight (
+                                          {fileMetadata.weightGrams < 1000
+                                            ? `${fileMetadata.weightGrams.toFixed(
+                                                2
+                                              )}g`
+                                            : `${(
+                                                fileMetadata.weightGrams / 1000
+                                              ).toFixed(2)}kg`}
+                                          )
+                                        </SelectItem>
+                                      )}
+
+                                      {/* Text file metadata */}
+                                      {fileMetadata.lines && (
+                                        <SelectItem value="lines">
+                                          Lines (
+                                          {fileMetadata.lines.toLocaleString()})
+                                        </SelectItem>
+                                      )}
+                                      {fileMetadata.words && (
+                                        <SelectItem value="words">
+                                          Words (
+                                          {fileMetadata.words.toLocaleString()})
+                                        </SelectItem>
+                                      )}
+                                      {fileMetadata.characters && (
+                                        <SelectItem value="characters">
+                                          Characters (
+                                          {fileMetadata.characters.toLocaleString()}
+                                          )
+                                        </SelectItem>
+                                      )}
+
+                                      {/* File size metadata */}
+                                      <SelectItem value="sizeValue">
+                                        File Size ({fileMetadata.sizeValue}{" "}
+                                        {fileMetadata.sizeCategory})
+                                      </SelectItem>
+                                      <SelectItem value="fileSize">
+                                        File Size (Bytes) (
+                                        {fileMetadata.fileSize})
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+
+                                <div>
+                                  <Label className="text-xs">
+                                    Link to Parameter
+                                  </Label>
+                                  <Select
+                                    value={connection.parameterName}
+                                    onValueChange={(value) =>
+                                      updateFileConnection(connection.id, {
+                                        parameterName: value,
+                                      })
+                                    }
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select parameter" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {parameters
+                                        .filter(
+                                          (p) =>
+                                            p.type === "NumericValue" ||
+                                            p.type === "DerivedCalc"
+                                        )
+                                        .map((param) => (
+                                          <SelectItem
+                                            key={param.id}
+                                            value={param.name}
+                                          >
+                                            {param.label || param.name}
+                                          </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+
+                              {connection.parameterName && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    applyFileConnection(connection)
+                                  }
+                                  className="w-full flex items-center gap-2"
+                                >
+                                  <Link className="w-4 h-4" />
+                                  Apply Connection
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </div>
 
             <Card>
               <CardHeader>
