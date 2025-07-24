@@ -28,6 +28,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+
 interface Category {
   id: string;
   name: string;
@@ -47,8 +57,18 @@ export default function Page() {
   const [basePrice, setBasePrice] = useState("");
   const [currency, setCurrency] = useState("");
 
+  // State for draggable parameters
+  const [parameters, setParameters] = useState<string[]>([
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+  ]);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+
   function saveCategory() {
-    //checks if base price is a valid number
+    //checks if the base price is a valid number
     if (isNaN(parseFloat(basePrice)) || basePrice.trim() === "") {
       alert("Please enter a valid base price.");
       return;
@@ -64,6 +84,39 @@ export default function Page() {
       },
     ]);
   }
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+
+    if (draggedIndex === null) return;
+
+    const newParameters = [...parameters];
+    const draggedItem = newParameters[draggedIndex];
+
+    // Remove the dragged item
+    newParameters.splice(draggedIndex, 1);
+
+    // Insert it at the new position
+    newParameters.splice(dropIndex, 0, draggedItem);
+
+    setParameters(newParameters);
+    setDraggedIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
 
   return (
     <SidebarProvider
@@ -154,8 +207,46 @@ export default function Page() {
                     </DialogContent>
                   </Dialog>
                 </div>
-                <div className="mt-4 space-y-2">
-                  <DataTable data={category} columns={columns} />
+                <div className="mt-4 space-y-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-2xl">Kaos</CardTitle>
+                      <CardDescription className="text-md text-muted-foreground">
+                        kaos anak berkualitas tinggi dengan bla bla bla
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <p>Base Price: $1.00</p>
+                      <p>Currency: USD</p>
+                    </CardContent>
+                    <CardFooter>
+                      <Dialog>
+                        <DialogTrigger asChild>
+                          <Button>Details</Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Kaos</DialogTitle>
+                            <DialogDescription>
+                              kaos anak berkualitas tinggi dengan bla bla bla
+                            </DialogDescription>
+                          </DialogHeader>
+                          <p>Base Price: $1.00</p>
+                          <p>Currency: USD</p>
+                          <p>Parameters:</p>
+                          <div className="w-full border-2 rounded-md p-4 flex flex-col">
+                            <div>Materials : select bla or bla</div>
+                            <div>Materials : select bla or bla</div>
+                            <div>Materials : select bla or bla</div>
+                            <div>Materials : select bla or bla</div>
+                          </div>
+                        </DialogContent>
+                      </Dialog>
+                      <Button variant="outline" className="ml-2">
+                        Edit
+                      </Button>
+                    </CardFooter>
+                  </Card>
                 </div>
               </div>
             </div>
