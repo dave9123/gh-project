@@ -3,7 +3,7 @@ import db from "../../modules/db";
 const router = express.Router();
 
 router.get("/orders", (req, res) => {});
-router.post("/orders/:id/status", (req, res) => {
+router.post("/orders/:id", (req, res) => {
   const { id } = req.params;
 });
 
