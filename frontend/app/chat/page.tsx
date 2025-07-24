@@ -147,16 +147,13 @@ export default function ChatInterface() {
 
     messages.forEach((message) => {
       if (message.newSection) {
-        // Start a new section
         if (currentSection.messages.length > 0) {
-          // Mark previous section as inactive
           sections.push({
             ...currentSection,
             isActive: false,
           });
         }
 
-        // Create new active section
         const newSectionId = `section-${Date.now()}-${sections.length}`;
         currentSection = {
           id: newSectionId,
@@ -166,15 +163,12 @@ export default function ChatInterface() {
           sectionIndex: sections.length,
         };
 
-        // Update active section ID
         setActiveSectionId(newSectionId);
       } else {
-        // Add to current section
         currentSection.messages.push(message);
       }
     });
 
-    // Add the last section if it has messages
     if (currentSection.messages.length > 0) {
       sections.push(currentSection);
     }
@@ -182,14 +176,12 @@ export default function ChatInterface() {
     setMessageSections(sections);
   }, [messages]);
 
-  // Scroll to maximum position when new section is created, but only for sections after the first
   useEffect(() => {
     if (messageSections.length > 1) {
       setTimeout(() => {
         const scrollContainer = chatContainerRef.current;
 
         if (scrollContainer) {
-          // Scroll to maximum possible position
           scrollContainer.scrollTo({
             top: scrollContainer.scrollHeight,
             behavior: "smooth",
@@ -199,14 +191,12 @@ export default function ChatInterface() {
     }
   }, [messageSections]);
 
-  // Focus the textarea on component mount (only on desktop)
   useEffect(() => {
     if (textareaRef.current && !isMobile) {
       textareaRef.current.focus();
     }
   }, [isMobile]);
 
-  // Set focus back to textarea after streaming ends (only on desktop)
   useEffect(() => {
     if (!isStreaming && shouldFocusAfterStreamingRef.current && !isMobile) {
       focusTextarea();
@@ -214,13 +204,10 @@ export default function ChatInterface() {
     }
   }, [isStreaming, isMobile]);
 
-  // Calculate available content height (viewport minus header and input)
   const getContentHeight = () => {
-    // Calculate available height by subtracting the top and bottom padding from viewport height
     return viewportHeight - TOP_PADDING - BOTTOM_PADDING - ADDITIONAL_OFFSET;
   };
 
-  // Save the current selection state
   const saveSelectionState = () => {
     if (textareaRef.current) {
       selectionStateRef.current = {
@@ -230,7 +217,6 @@ export default function ChatInterface() {
     }
   };
 
-  // Restore the saved selection state
   const restoreSelectionState = () => {
     const textarea = textareaRef.current;
     const { start, end } = selectionStateRef.current;
