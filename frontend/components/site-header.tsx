@@ -38,7 +38,7 @@ export function SiteHeader() {
           className="mx-2 data-[orientation=vertical]:h-4 hidden lg:block"
         />
 
-        <div>
+        <div className="flex gap-5">
           {navigationRoutes.map((data, index) => (
             <Link key={index} href={`/dashboard/${data.url}`}>
               <div className="flex justify-center cursor-pointer hover:underline items-center gap-2 py-6">

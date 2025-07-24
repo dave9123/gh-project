@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -18,6 +19,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -29,51 +37,31 @@ import {
   FileText,
   Upload,
   Link,
+  ChevronUp,
+  ChevronDown,
+  Save,
+  AlertTriangle,
+  Download,
+  MoreVertical,
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { printingSamples } from "@/lib/printingSamples";
+import NumberFlow from "@number-flow/react";
+import type {
+  InputDisplayType,
+  Parameter,
+  ParameterType,
+  PricingRule,
+  FixedOption,
+  SubOption,
+} from "@/lib/formBuilderTypes";
 
-type ParameterType = "FixedOption" | "NumericValue" | "DerivedCalc";
+type CurrencyType = "USD" | "IDR";
 
-interface PricingRule {
-  base_price?: number;
-  unit_price?: number;
-  multiplier?: number;
-  step_pricing?: {
-    threshold: number;
-    step_amount: number;
-  };
-}
-
-interface FixedOption {
-  label: string;
-  value: string;
-  pricing: PricingRule;
-}
-
-export interface Parameter {
-  id: string;
+interface CurrencyConfig {
+  symbol: string;
+  code: string;
   name: string;
-  label: string;
-  type: ParameterType;
-  required: boolean;
-  pricing: PricingRule;
-  options?: FixedOption[];
-  min?: number;
-  max?: number;
-  step?: number;
-  unit?: string;
-  unitsPerQuantity?: number; // How many units are in one quantity
-  isMainUnits?: boolean; // Whether this is the primary units parameter
-  formula?: string;
-  dependencies?: string[];
-  conditional?: {
-    parentParameter: string;
-    showWhen: string[];
-  };
-  hasSubParameters?: boolean;
-  subParameters?: Parameter[];
-  pricingScope?: "per_unit" | "per_quantity";
 }
 
 interface FormValues {
@@ -114,6 +102,25 @@ interface FileUploadConnection {
   metadataKey: string; // e.g., "pages", "width", "height"
   parameterName: string; // which parameter to link to
   description: string;
+}
+
+interface FormBuilderData {
+  id?: string;
+  name: string;
+  description?: string;
+  parameters: Parameter[];
+  currency: CurrencyType;
+  fileConnections: FileUploadConnection[];
+  formValues: FormValues;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+interface SaveResponse {
+  success: boolean;
+  message: string;
+  data?: FormBuilderData;
+  error?: string;
 }
 
 // Safe expression evaluator for basic math operations
@@ -730,6 +737,20 @@ const getDocumentFormat = (mimeType: string): string => {
   return formats[mimeType] || "Document";
 };
 
+// Currency configurations
+const currencies: Record<CurrencyType, CurrencyConfig> = {
+  USD: {
+    symbol: "$",
+    code: "USD",
+    name: "US Dollar",
+  },
+  IDR: {
+    symbol: "Rp",
+    code: "IDR",
+    name: "Indonesian Rupiah",
+  },
+};
+
 export default function QuoteFormBuilder() {
   const [parameters, setParameters] = useState<Parameter[]>([]);
   const [activeTab, setActiveTab] = useState("builder");
@@ -749,6 +770,19 @@ export default function QuoteFormBuilder() {
   >([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [selectedFileType, setSelectedFileType] = useState<string>("pdf");
+  const [selectedCurrency, setSelectedCurrency] = useState<CurrencyType>("USD");
+
+  // Save functionality state
+  const [formName, setFormName] = useState<string>("");
+  const [formDescription, setFormDescription] = useState<string>("");
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [lastSavedData, setLastSavedData] = useState<FormBuilderData | null>(
+    null
+  );
+  const [saveStatus, setSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
 
   const addParameter = () => {
     const newParam: Parameter = {
@@ -880,17 +914,109 @@ export default function QuoteFormBuilder() {
     setParameters(parameters.filter((param) => param.id !== id));
   };
 
+  const moveParameterUp = (id: string) => {
+    const currentIndex = parameters.findIndex((param) => param.id === id);
+    if (currentIndex > 0) {
+      const newParameters = [...parameters];
+      [newParameters[currentIndex - 1], newParameters[currentIndex]] = [
+        newParameters[currentIndex],
+        newParameters[currentIndex - 1],
+      ];
+      setParameters(newParameters);
+    }
+  };
+
+  const moveParameterDown = (id: string) => {
+    const currentIndex = parameters.findIndex((param) => param.id === id);
+    if (currentIndex < parameters.length - 1) {
+      const newParameters = [...parameters];
+      [newParameters[currentIndex], newParameters[currentIndex + 1]] = [
+        newParameters[currentIndex + 1],
+        newParameters[currentIndex],
+      ];
+      setParameters(newParameters);
+    }
+  };
+
   const addOption = (paramId: string) => {
     const param = parameters.find((p) => p.id === paramId);
     if (param && param.type === "FixedOption") {
       const newOption: FixedOption = {
         label: "",
         value: "",
+        description: "",
         pricing: {},
+        subOptions: [],
       };
       updateParameter(paramId, {
         options: [...(param.options || []), newOption],
       });
+    }
+  };
+
+  const addSubOption = (paramId: string, optionIndex: number) => {
+    const param = parameters.find((p) => p.id === paramId);
+    if (param && param.options && param.options[optionIndex]) {
+      const newSubOption: SubOption = {
+        id: `suboption_${Date.now()}`,
+        label: "",
+        value: "",
+        description: "",
+        price: 0,
+        pricingScope: "per_qty",
+      };
+
+      const updatedOptions = [...param.options];
+      updatedOptions[optionIndex] = {
+        ...updatedOptions[optionIndex],
+        subOptions: [
+          ...(updatedOptions[optionIndex].subOptions || []),
+          newSubOption,
+        ],
+      };
+
+      updateParameter(paramId, { options: updatedOptions });
+    }
+  };
+
+  const updateSubOption = (
+    paramId: string,
+    optionIndex: number,
+    subOptionId: string,
+    updates: Partial<SubOption>
+  ) => {
+    const param = parameters.find((p) => p.id === paramId);
+    if (param && param.options && param.options[optionIndex]) {
+      const updatedOptions = [...param.options];
+      const subOptions = updatedOptions[optionIndex].subOptions || [];
+
+      updatedOptions[optionIndex] = {
+        ...updatedOptions[optionIndex],
+        subOptions: subOptions.map((subOpt) =>
+          subOpt.id === subOptionId ? { ...subOpt, ...updates } : subOpt
+        ),
+      };
+
+      updateParameter(paramId, { options: updatedOptions });
+    }
+  };
+
+  const deleteSubOption = (
+    paramId: string,
+    optionIndex: number,
+    subOptionId: string
+  ) => {
+    const param = parameters.find((p) => p.id === paramId);
+    if (param && param.options && param.options[optionIndex]) {
+      const updatedOptions = [...param.options];
+      const subOptions = updatedOptions[optionIndex].subOptions || [];
+
+      updatedOptions[optionIndex] = {
+        ...updatedOptions[optionIndex],
+        subOptions: subOptions.filter((subOpt) => subOpt.id !== subOptionId),
+      };
+
+      updateParameter(paramId, { options: updatedOptions });
     }
   };
 
@@ -1014,7 +1140,7 @@ export default function QuoteFormBuilder() {
         // Base price is per QTY (per item ordered)
         if (param.pricing.base_price) {
           paramTotal += param.pricing.base_price;
-          description += `Base: $${param.pricing.base_price} per item`;
+          description += `Base: ${currencies[selectedCurrency].symbol}${param.pricing.base_price} per item`;
         }
 
         if (param.type === "FixedOption") {
@@ -1027,7 +1153,7 @@ export default function QuoteFormBuilder() {
               paramTotal += selectedOption.pricing.base_price;
               description +=
                 (description ? " + " : "") +
-                `Option: $${selectedOption.pricing.base_price} per item`;
+                `Option: ${currencies[selectedCurrency].symbol}${selectedOption.pricing.base_price} per item`;
             }
             // Unit price for option scales with main units
             if (selectedOption.pricing.unit_price) {
@@ -1036,15 +1162,46 @@ export default function QuoteFormBuilder() {
               paramTotal += unitCost;
               description +=
                 (description ? " + " : "") +
-                `$${selectedOption.pricing.unit_price} × ${mainUnitsValue} ${
-                  mainUnitsParam?.unit || "units"
-                }`;
+                `${currencies[selectedCurrency].symbol}${
+                  selectedOption.pricing.unit_price
+                } × ${mainUnitsValue} ${mainUnitsParam?.unit || "units"}`;
             }
             if (selectedOption.pricing.multiplier) {
               paramTotal *= selectedOption.pricing.multiplier;
               description +=
                 (description ? " × " : "") +
                 `${selectedOption.pricing.multiplier}`;
+            }
+
+            // Handle sub-options pricing
+            if (selectedOption.subOptions) {
+              selectedOption.subOptions.forEach((subOption) => {
+                const subOptionValue =
+                  calculatedValues[`${param.name}_${subOption.value}`];
+                if (subOptionValue && subOption.price) {
+                  let subOptionTotal = 0;
+                  let subDescription = "";
+
+                  if (subOption.pricingScope === "per_qty") {
+                    subOptionTotal += subOption.price;
+                    subDescription += `${subOption.label}: ${currencies[selectedCurrency].symbol}${subOption.price} per item`;
+                  } else {
+                    const unitCost = subOption.price * mainUnitsValue;
+                    subOptionTotal += unitCost;
+                    subDescription += `${subOption.label}: ${
+                      currencies[selectedCurrency].symbol
+                    }${subOption.price} × ${mainUnitsValue} ${
+                      mainUnitsParam?.unit || "units"
+                    }`;
+                  }
+
+                  if (subOptionTotal > 0) {
+                    paramTotal += subOptionTotal;
+                    description +=
+                      (description ? " + " : "") + `[${subDescription}]`;
+                  }
+                }
+              });
             }
           }
         } else if (
@@ -1062,9 +1219,11 @@ export default function QuoteFormBuilder() {
             paramTotal += unitCost;
             description +=
               (description ? " + " : "") +
-              `${totalUnits} ${param.unit || "units"} × $${
-                param.pricing.unit_price
-              } × ${mainUnitsValue} ${mainUnitsParam?.unit || "main units"}`;
+              `${totalUnits} ${param.unit || "units"} × ${
+                currencies[selectedCurrency].symbol
+              }${param.pricing.unit_price} × ${mainUnitsValue} ${
+                mainUnitsParam?.unit || "main units"
+              }`;
           }
 
           if (
@@ -1078,7 +1237,7 @@ export default function QuoteFormBuilder() {
             paramTotal += stepCost;
             description +=
               (description ? " + " : "") +
-              `${steps} steps × $${param.pricing.step_pricing.step_amount}`;
+              `${steps} steps × ${currencies[selectedCurrency].symbol}${param.pricing.step_pricing.step_amount}`;
           }
 
           if (param.pricing.multiplier) {
@@ -1355,51 +1514,565 @@ export default function QuoteFormBuilder() {
     setFileConnections([]);
   };
 
+  // Save and update functionality
+  const getCurrentFormData = (): FormBuilderData => {
+    return {
+      id: lastSavedData?.id,
+      name: formName,
+      description: formDescription,
+      parameters: parameters,
+      currency: selectedCurrency,
+      fileConnections: fileConnections,
+      formValues: formValues,
+      createdAt: lastSavedData?.createdAt,
+      updatedAt: new Date().toISOString(),
+    };
+  };
+
+  const hasDataChanged = (): boolean => {
+    if (!lastSavedData) return true; // No previous save, so it's definitely changed
+
+    const currentData = getCurrentFormData();
+
+    // Compare key fields that indicate changes
+    return (
+      lastSavedData.name !== currentData.name ||
+      lastSavedData.description !== currentData.description ||
+      lastSavedData.currency !== currentData.currency ||
+      JSON.stringify(lastSavedData.parameters) !==
+        JSON.stringify(currentData.parameters) ||
+      JSON.stringify(lastSavedData.fileConnections) !==
+        JSON.stringify(currentData.fileConnections)
+    );
+  };
+
+  const saveFormData = async (): Promise<SaveResponse> => {
+    try {
+      setIsSaving(true);
+      setSaveStatus("saving");
+
+      const formData = getCurrentFormData();
+
+      // Validation
+      if (!formData.name.trim()) {
+        throw new Error("Product name is required");
+      }
+
+      if (formData.parameters.length === 0) {
+        throw new Error("At least one product option is required");
+      }
+
+      // Check for parameters with missing names
+      const invalidParams = formData.parameters.filter(
+        (param) => !param.name.trim()
+      );
+      if (invalidParams.length > 0) {
+        throw new Error(`Please provide names for all product options`);
+      }
+
+      // API endpoint - adjust this to match your backend
+      // Expected API structure:
+      // POST /api/products - Create new product configuration
+      // PUT /api/products/:id - Update existing product  
+      // GET /api/products/:id - Load product configuration by ID
+      //
+      // Request body should match FormBuilderData interface
+      // Response should match SaveResponse interface
+      const endpoint = formData.id ? `/api/products/${formData.id}` : "/api/products";
+      const method = formData.id ? "PUT" : "POST";
+
+      const response = await fetch(endpoint, {
+        method: method,
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.message || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      const result: SaveResponse = await response.json();
+
+      if (result.success && result.data) {
+        setLastSavedData(result.data);
+        setHasUnsavedChanges(false);
+        setSaveStatus("saved");
+
+        // Clear saved status after 3 seconds
+        setTimeout(() => {
+          setSaveStatus("idle");
+        }, 3000);
+
+        return result;
+      } else {
+        throw new Error(result.message || "Save failed");
+      }
+    } catch (error) {
+      setSaveStatus("error");
+      const errorMessage =
+        error instanceof Error ? error.message : "An unknown error occurred";
+
+      // Clear error status after 5 seconds
+      setTimeout(() => {
+        setSaveStatus("idle");
+      }, 5000);
+
+      return {
+        success: false,
+        message: "Save failed",
+        error: errorMessage,
+      };
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSave = async () => {
+    const result = await saveFormData();
+
+    if (!result.success) {
+      console.error("Save failed:", result.error);
+      // You could show a toast notification here
+      alert(`Save failed: ${result.error}`);
+    } else {
+      console.log("Save successful:", result.message);
+      // You could show a success toast notification here
+    }
+  };
+
+  const loadFormData = async (formId: string): Promise<SaveResponse> => {
+    try {
+      setIsSaving(true);
+      setSaveStatus("saving");
+
+      const response = await fetch(`/api/forms/${formId}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.message || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      const result: SaveResponse = await response.json();
+
+      if (result.success && result.data) {
+        // Load the data into state
+        setFormName(result.data.name);
+        setFormDescription(result.data.description || "");
+        setParameters(result.data.parameters);
+        setSelectedCurrency(result.data.currency);
+        setFileConnections(result.data.fileConnections);
+        setFormValues(result.data.formValues);
+        setLastSavedData(result.data);
+        setHasUnsavedChanges(false);
+        setSaveStatus("saved");
+
+        // Clear saved status after 3 seconds
+        setTimeout(() => {
+          setSaveStatus("idle");
+        }, 3000);
+
+        return result;
+      } else {
+        throw new Error(result.message || "Load failed");
+      }
+    } catch (error) {
+      setSaveStatus("error");
+      const errorMessage =
+        error instanceof Error ? error.message : "An unknown error occurred";
+
+      // Clear error status after 5 seconds
+      setTimeout(() => {
+        setSaveStatus("idle");
+      }, 5000);
+
+      return {
+        success: false,
+        message: "Load failed",
+        error: errorMessage,
+      };
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleLoad = async (formId: string) => {
+    if (showUnsavedWarning()) {
+      const confirmLoad = window.confirm(
+        "You have unsaved changes. Loading a new form will discard these changes. Continue?"
+      );
+      if (!confirmLoad) return;
+    }
+
+    const result = await loadFormData(formId);
+
+    if (!result.success) {
+      console.error("Load failed:", result.error);
+      alert(`Load failed: ${result.error}`);
+    } else {
+      console.log("Load successful:", result.message);
+    }
+  };
+
+  const resetForm = () => {
+    if (showUnsavedWarning()) {
+      const confirmReset = window.confirm(
+        "You have unsaved changes. Resetting will discard these changes. Continue?"
+      );
+      if (!confirmReset) return;
+    }
+
+    setFormName("");
+    setFormDescription("");
+    setParameters([]);
+    setFormValues({ quantity: "1" });
+    setFileConnections([]);
+    setUploadedFile(null);
+    setFileMetadata(null);
+    setSelectedCurrency("USD");
+    setLastSavedData(null);
+    setHasUnsavedChanges(false);
+    setSaveStatus("idle");
+  };
+
+  const exportFormData = () => {
+    const formData = getCurrentFormData();
+    const dataStr = JSON.stringify(formData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: "application/json" });
+    const url = URL.createObjectURL(dataBlob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${formName || "form"}_${
+      new Date().toISOString().split("T")[0]
+    }.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const previewFormData = () => {
+    const formData = getCurrentFormData();
+    const summary = {
+      formInfo: {
+        name: formData.name,
+        description: formData.description,
+        currency: formData.currency,
+      },
+      parameters: formData.parameters.length,
+      fileConnections: formData.fileConnections.length,
+      formValues: Object.keys(formData.formValues).length,
+      estimatedDataSize: `${Math.round(
+        JSON.stringify(formData).length / 1024
+      )}KB`,
+    };
+
+    console.log("Form Data Summary:", summary);
+    console.log("Complete Form Data:", formData);
+
+    alert(`Form Data Summary:
+• Name: ${summary.formInfo.name || "Untitled"}
+• Parameters: ${summary.parameters}
+• File Connections: ${summary.fileConnections}
+• Currency: ${summary.formInfo.currency}
+• Estimated Size: ${summary.estimatedDataSize}
+
+Check console for complete data structure.`);
+  };
+
+  const importFormData = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (showUnsavedWarning()) {
+      const confirmImport = window.confirm(
+        "You have unsaved changes. Importing will discard these changes. Continue?"
+      );
+      if (!confirmImport) {
+        event.target.value = ""; // Reset the file input
+        return;
+      }
+    }
+
+    try {
+      const text = await file.text();
+      const importedData: FormBuilderData = JSON.parse(text);
+
+      // Validate the imported data structure
+      if (!importedData.name || !Array.isArray(importedData.parameters)) {
+        throw new Error("Invalid form data format");
+      }
+
+      // Load the imported data
+      setFormName(importedData.name);
+      setFormDescription(importedData.description || "");
+      setParameters(importedData.parameters);
+      setSelectedCurrency(importedData.currency || "USD");
+      setFileConnections(importedData.fileConnections || []);
+      setFormValues(importedData.formValues || { quantity: "1" });
+      setLastSavedData(null); // Reset save state since this is imported
+      setHasUnsavedChanges(true); // Mark as changed since it's imported
+      setSaveStatus("idle");
+
+      alert("Form data imported successfully!");
+    } catch (error) {
+      console.error("Import failed:", error);
+      alert(
+        `Import failed: ${
+          error instanceof Error ? error.message : "Invalid file format"
+        }`
+      );
+    }
+
+    // Reset the file input
+    event.target.value = "";
+  };
+
+  const showUnsavedWarning = (): boolean => {
+    return hasUnsavedChanges && hasDataChanged();
+  };
+
+  // Track changes for unsaved warning
+  useEffect(() => {
+    if (lastSavedData) {
+      setHasUnsavedChanges(hasDataChanged());
+    }
+  }, [
+    parameters,
+    selectedCurrency,
+    fileConnections,
+    formName,
+    formDescription,
+  ]);
+
+  // Warn before leaving page with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (showUnsavedWarning()) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
   console.log(parameters, JSON.stringify(parameters));
 
   return (
     <div className="container mx-auto p-6 max-w-7xl">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">Quote Form Builder</h1>
-        <p className="text-muted-foreground">
-          Build dynamic pricing forms with FixedOption, NumericValue, and
-          DerivedCalc parameters. Total price is calculated as unit price ×
-          quantity.
-        </p>
+      <div className="mb-6 space-y-4">
+        {/* Form Information Section */}
+        <Card>
+          <CardHeader>
+            <div className="flex justify-between items-start">
+              <div className="flex-1">
+                <CardTitle className="flex items-center gap-2">
+                  Product Information Form
+                  {showUnsavedWarning() && (
+                    <Badge variant="destructive" className="text-xs">
+                      <AlertTriangle className="w-3 h-3 mr-1" />
+                      Unsaved Changes
+                    </Badge>
+                  )}
+                  {saveStatus === "saved" && (
+                    <Badge variant="default" className="text-xs bg-green-600">
+                      <Save className="w-3 h-3 mr-1" />
+                      Saved
+                    </Badge>
+                  )}
+                  {saveStatus === "error" && (
+                    <Badge variant="destructive" className="text-xs">
+                      <AlertTriangle className="w-3 h-3 mr-1" />
+                      Save Failed
+                    </Badge>
+                  )}
+                </CardTitle>
+                <CardDescription>
+                  Configure product parameters and pricing for customer quotes
+                  {lastSavedData?.updatedAt && (
+                    <span className="block text-xs text-muted-foreground mt-1">
+                      Last saved:{" "}
+                      {new Date(lastSavedData.updatedAt).toLocaleString()}
+                    </span>
+                  )}
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <MoreVertical className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={previewFormData}>
+                      <Eye className="w-4 h-4 mr-2" />
+                      Preview Data
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={exportFormData}>
+                      <Download className="w-4 h-4 mr-2" />
+                      Export JSON
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        document.getElementById("import-file")?.click()
+                      }
+                    >
+                      <Upload className="w-4 h-4 mr-2" />
+                      Import JSON
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={resetForm}
+                      className="text-destructive"
+                    >
+                      Reset Form
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <input
+                  id="import-file"
+                  type="file"
+                  accept=".json"
+                  onChange={importFormData}
+                  className="hidden"
+                />
+                <Button
+                  onClick={handleSave}
+                  disabled={isSaving || !formName.trim()}
+                  className="flex items-center gap-2"
+                  variant={showUnsavedWarning() ? "default" : "outline"}
+                >
+                  <Save className="w-4 h-4" />
+                  {isSaving
+                    ? "Saving..."
+                    : lastSavedData?.id
+                    ? "Update"
+                    : "Save"}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="form-name">Product Name *</Label>
+              <Input
+                id="form-name"
+                placeholder="e.g., Business Card Printing, T-Shirt Printing"
+                value={formName}
+                onChange={(e) => setFormName(e.target.value)}
+                className={
+                  !formName.trim()
+                    ? "border-destructive ring-destructive/20 ring-1"
+                    : ""
+                }
+              />
+              {!formName.trim() && (
+                <div className="text-xs text-destructive">
+                  Product name is required
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="form-description">Product Description</Label>
+              <Textarea
+                id="form-description"
+                placeholder="Describe this product and its pricing structure..."
+                value={formDescription}
+                onChange={(e) => setFormDescription(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Header Section */}
+        <div className="flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Product Quote Builder</h1>
+            <p className="text-muted-foreground">
+              Configure product parameters and pricing rules for customer quote generation.
+              Set up options, calculations, and pricing that customers will see when requesting quotes.
+            </p>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <Label htmlFor="currency-selector" className="text-sm font-medium">
+              Currency
+            </Label>
+            <Select
+              value={selectedCurrency}
+              onValueChange={(value: CurrencyType) =>
+                setSelectedCurrency(value)
+              }
+            >
+              <SelectTrigger className="w-40" id="currency-selector">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(currencies).map(([code, config]) => (
+                  <SelectItem key={code} value={code}>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono">{config.symbol}</span>
+                      <span>{config.code}</span>
+                      <span className="text-muted-foreground text-sm">
+                        {config.name}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="builder" className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
-            Form Builder
+            Product Setup
           </TabsTrigger>
           <TabsTrigger value="preview" className="flex items-center gap-2">
             <Eye className="w-4 h-4" />
-            Preview & Test
+            Customer View
           </TabsTrigger>
           <TabsTrigger value="connections" className="flex items-center gap-2">
             <Link className="w-4 h-4" />
-            File Connections
+            File Integration
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="builder" className="space-y-6">
           <div className="flex justify-between items-center">
             <div>
-              <h2 className="text-xl font-semibold">Parameters</h2>
+              <h2 className="text-xl font-semibold">Product Parameters</h2>
               {(() => {
                 const mainUnitsParam = parameters.find((p) => p.isMainUnits);
                 return mainUnitsParam ? (
                   <div className="text-sm text-muted-foreground mt-1">
-                    Main units parameter:{" "}
+                    Main pricing unit:{" "}
                     <span className="font-medium">
                       {mainUnitsParam.label || mainUnitsParam.name}
                     </span>
                   </div>
                 ) : (
                   <div className="text-sm text-muted-foreground mt-1">
-                    No main units parameter set
+                    No main pricing unit set
                   </div>
                 );
               })()}
@@ -1433,18 +2106,26 @@ export default function QuoteFormBuilder() {
                 className="flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
-                Add Parameter
+                Add Product Option
               </Button>
             </div>
           </div>
 
           <div className="space-y-4">
-            {parameters.map((param) => (
+            {parameters.map((param, index) => (
               <Card key={param.id}>
                 <CardHeader className="pb-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline">{param.type}</Badge>
+                      <div className="flex items-center gap-2 min-w-fit">
+                        <Badge
+                          variant="secondary"
+                          className="text-xs font-mono"
+                        >
+                          #{index + 1}
+                        </Badge>
+                        <Badge variant="outline">{param.type}</Badge>
+                      </div>
                       {param.conditional && (
                         <Badge variant="secondary" className="text-xs">
                           Conditional
@@ -1459,48 +2140,96 @@ export default function QuoteFormBuilder() {
                         </Badge>
                       )}
                       <CardTitle className="text-lg">
-                        {param.label || param.name || "Unnamed Parameter"}
+                        {param.label || param.name || "Unnamed Product Option"}
                       </CardTitle>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => deleteParameter(param.id)}
-                      className="text-destructive hover:text-destructive"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      {/* Parameter ordering buttons */}
+                      <div className="flex flex-col">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => moveParameterUp(param.id)}
+                          disabled={
+                            parameters.findIndex((p) => p.id === param.id) === 0
+                          }
+                          className="h-6 px-2 hover:bg-gray-100"
+                          title="Move parameter up"
+                        >
+                          <ChevronUp className="w-3 h-3" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => moveParameterDown(param.id)}
+                          disabled={
+                            parameters.findIndex((p) => p.id === param.id) ===
+                            parameters.length - 1
+                          }
+                          className="h-6 px-2 hover:bg-gray-100"
+                          title="Move parameter down"
+                        >
+                          <ChevronDown className="w-3 h-3" />
+                        </Button>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => deleteParameter(param.id)}
+                        className="text-destructive hover:text-destructive"
+                        title="Delete parameter"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor={`name-${param.id}`}>Parameter Name</Label>
+                      <Label htmlFor={`name-${param.id}`}>Option ID/Name</Label>
                       <Input
                         id={`name-${param.id}`}
                         value={param.name}
                         onChange={(e) =>
                           updateParameter(param.id, { name: e.target.value })
                         }
-                        placeholder="e.g., material, quantity"
+                        placeholder="e.g., material, size, finish"
                       />
                     </div>
                     <div>
-                      <Label htmlFor={`label-${param.id}`}>Display Label</Label>
+                      <Label htmlFor={`label-${param.id}`}>Customer Label</Label>
                       <Input
                         id={`label-${param.id}`}
                         value={param.label}
                         onChange={(e) =>
                           updateParameter(param.id, { label: e.target.value })
                         }
-                        placeholder="e.g., Material Type, Quantity"
+                        placeholder="e.g., Material Type, Paper Size, Finish Options"
                       />
                     </div>
                   </div>
 
+                  <div>
+                    <Label htmlFor={`description-${param.id}`}>
+                      Customer Description
+                    </Label>
+                    <Textarea
+                      id={`description-${param.id}`}
+                      value={param.description || ""}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+                        updateParameter(param.id, {
+                          description: e.target.value,
+                        })
+                      }
+                      placeholder="Help text that customers will see..."
+                      rows={2}
+                    />
+                  </div>
+
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label htmlFor={`type-${param.id}`}>Parameter Type</Label>
+                      <Label htmlFor={`type-${param.id}`}>Option Type</Label>
                       <Select
                         value={param.type}
                         onValueChange={(value: ParameterType) =>
@@ -1512,13 +2241,13 @@ export default function QuoteFormBuilder() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="FixedOption">
-                            Fixed Option
+                            Choice Options (e.g., Material, Size)
                           </SelectItem>
                           <SelectItem value="NumericValue">
-                            Numeric Value
+                            Number Input (e.g., Width, Height)
                           </SelectItem>
                           <SelectItem value="DerivedCalc">
-                            Derived Calculation
+                            Auto-Calculated (e.g., Area = Width × Height)
                           </SelectItem>
                         </SelectContent>
                       </Select>
@@ -1531,26 +2260,46 @@ export default function QuoteFormBuilder() {
                           updateParameter(param.id, { required: checked })
                         }
                       />
-                      <Label htmlFor={`required-${param.id}`}>Required</Label>
+                      <Label htmlFor={`required-${param.id}`}>Required for Quote</Label>
                     </div>
                   </div>
 
                   {param.type === "FixedOption" && (
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <Label>Options</Label>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => addOption(param.id)}
-                        >
-                          Add Option
-                        </Button>
+                        <Label>Customer Options</Label>
+                        <div className="flex items-center gap-2">
+                          <div className="text-sm text-muted-foreground">
+                            Display as:
+                          </div>
+                          <Select
+                            value={param.displayType || "select"}
+                            onValueChange={(value: InputDisplayType) =>
+                              updateParameter(param.id, { displayType: value })
+                            }
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="select">Dropdown</SelectItem>
+                              <SelectItem value="radio">Radio Buttons</SelectItem>
+                              <SelectItem value="toggle">Toggle Buttons</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => addOption(param.id)}
+                          >
+                            Add Option
+                          </Button>
+                        </div>
                       </div>
                       {param.options?.map((option, index) => (
                         <div
                           key={index}
-                          className="border rounded-lg p-3 space-y-2"
+                          className="border rounded-lg p-4 space-y-3"
                         >
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-medium">
@@ -1583,6 +2332,20 @@ export default function QuoteFormBuilder() {
                                   value: e.target.value,
                                 })
                               }
+                            />
+                          </div>
+                          <div>
+                            <Textarea
+                              placeholder="Option description..."
+                              value={option.description || ""}
+                              onChange={(
+                                e: React.ChangeEvent<HTMLTextAreaElement>
+                              ) =>
+                                updateOption(param.id, index, {
+                                  description: e.target.value,
+                                })
+                              }
+                              rows={2}
                             />
                           </div>
                           <div className="grid grid-cols-3 gap-2">
@@ -1633,6 +2396,167 @@ export default function QuoteFormBuilder() {
                                 })
                               }
                             />
+                          </div>
+
+                          {/* Sub-options section */}
+                          <div className="border-t pt-3 mt-3">
+                            <div className="flex items-center justify-between mb-3">
+                              <Label className="text-sm">Sub-options</Label>
+                              <div className="flex items-center gap-2">
+                                <div className="text-xs text-muted-foreground">
+                                  Display as:
+                                </div>
+                                <Select
+                                  value={option.displayType || "radio"}
+                                  onValueChange={(value: InputDisplayType) =>
+                                    updateOption(param.id, index, {
+                                      displayType: value,
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger className="w-24">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="radio">Radio</SelectItem>
+                                    <SelectItem value="toggle">
+                                      Toggle
+                                    </SelectItem>
+                                  </SelectContent>
+                                </Select>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => addSubOption(param.id, index)}
+                                >
+                                  <Plus className="w-3 h-3 mr-1" />
+                                  Add Sub-option
+                                </Button>
+                              </div>
+                            </div>
+                            {option.subOptions?.map((subOption) => (
+                              <div
+                                key={subOption.id}
+                                className="bg-gray-50 rounded-md p-3 space-y-2 mb-2"
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-medium text-gray-600">
+                                    Sub-option
+                                  </span>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() =>
+                                      deleteSubOption(
+                                        param.id,
+                                        index,
+                                        subOption.id
+                                      )
+                                    }
+                                    className="text-destructive hover:text-destructive"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <Input
+                                    placeholder="Sub-option Label"
+                                    value={subOption.label}
+                                    onChange={(e) =>
+                                      updateSubOption(
+                                        param.id,
+                                        index,
+                                        subOption.id,
+                                        {
+                                          label: e.target.value,
+                                        }
+                                      )
+                                    }
+                                  />
+                                  <Input
+                                    placeholder="Sub-option Value"
+                                    value={subOption.value}
+                                    onChange={(e) =>
+                                      updateSubOption(
+                                        param.id,
+                                        index,
+                                        subOption.id,
+                                        {
+                                          value: e.target.value,
+                                        }
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <Textarea
+                                  placeholder="Sub-option description..."
+                                  value={subOption.description || ""}
+                                  onChange={(
+                                    e: React.ChangeEvent<HTMLTextAreaElement>
+                                  ) =>
+                                    updateSubOption(
+                                      param.id,
+                                      index,
+                                      subOption.id,
+                                      {
+                                        description: e.target.value,
+                                      }
+                                    )
+                                  }
+                                  rows={1}
+                                />
+                                <div className="grid grid-cols-3 gap-2">
+                                  <Select
+                                    value={subOption.pricingScope}
+                                    onValueChange={(
+                                      value: "per_qty" | "per_unit"
+                                    ) =>
+                                      updateSubOption(
+                                        param.id,
+                                        index,
+                                        subOption.id,
+                                        {
+                                          pricingScope: value,
+                                        }
+                                      )
+                                    }
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="per_qty">
+                                        Per Qty
+                                      </SelectItem>
+                                      <SelectItem value="per_unit">
+                                        Per Unit
+                                      </SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    placeholder="Price"
+                                    value={subOption.price || ""}
+                                    onChange={(e) =>
+                                      updateSubOption(
+                                        param.id,
+                                        index,
+                                        subOption.id,
+                                        {
+                                          price:
+                                            Number.parseFloat(e.target.value) ||
+                                            undefined,
+                                        }
+                                      )
+                                    }
+                                  />
+                                  <span className="text-xs text-muted-foreground flex items-center">
+                                    Additional cost
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         </div>
                       ))}
@@ -1945,12 +2869,12 @@ export default function QuoteFormBuilder() {
                       <Separator />
                       <div>
                         <Label className="text-base font-medium">
-                          Pricing Rules
+                          Pricing Configuration
                         </Label>
                         <div className="grid grid-cols-2 gap-4 mt-2">
                           <div>
                             <Label className="text-sm">
-                              Base Price ($ per QTY)
+                              Base Price ({currencies[selectedCurrency].symbol} per item ordered)
                             </Label>
                             <Input
                               type="number"
@@ -1969,12 +2893,12 @@ export default function QuoteFormBuilder() {
                               }
                             />
                             <div className="text-xs text-muted-foreground mt-1">
-                              Fixed cost added per item in the order
+                              Fixed cost added per item in the customer's order
                             </div>
                           </div>
                           <div>
                             <Label className="text-sm">
-                              Unit Price ($ per main unit)
+                              Unit Price ({currencies[selectedCurrency].symbol} per main unit)
                             </Label>
                             <Input
                               type="number"
@@ -2002,7 +2926,7 @@ export default function QuoteFormBuilder() {
                                       mainUnitsParam.label ||
                                       mainUnitsParam.name
                                     } (${mainUnitsParam.unit || "units"})`
-                                  : "Set a main units parameter first";
+                                  : "Cost multiplied by the main pricing unit";
                               })()}
                             </div>
                           </div>
@@ -2092,7 +3016,7 @@ export default function QuoteFormBuilder() {
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Calculator className="w-5 h-5" />
-                      <CardTitle>Quote Form</CardTitle>
+                      <CardTitle>Customer Quote Form</CardTitle>
                     </div>
                     <Button
                       variant="outline"
@@ -2105,7 +3029,7 @@ export default function QuoteFormBuilder() {
                     </Button>
                   </div>
                   <CardDescription>
-                    Fill out the form to get an instant quote
+                    Preview how customers will see your product configuration form
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -2154,79 +3078,303 @@ export default function QuoteFormBuilder() {
                           )}
                         </div>
 
+                        {/* Parameter description */}
+                        {param.description && (
+                          <p className="text-sm text-muted-foreground">
+                            {param.description}
+                          </p>
+                        )}
+
                         {param.type === "FixedOption" && (
-                          <Select
-                            value={
-                              formValues[param.name] === ""
-                                ? "__none__"
-                                : formValues[param.name] || "__none__"
-                            }
-                            onValueChange={(value) => {
-                              const actualValue =
-                                value === "__none__" ? "" : value;
-                              updateFormValue(param.name, actualValue);
-                              const dependentParams = parameters.filter(
-                                (p) =>
-                                  p.conditional?.parentParameter === param.name
-                              );
-                              dependentParams.forEach((depParam) => {
-                                updateFormValue(depParam.name, "");
-                              });
-                            }}
-                          >
-                            <SelectTrigger
-                              className={
-                                param.required &&
-                                (!formValues[param.name] ||
-                                  formValues[param.name] === "")
-                                  ? "border-destructive ring-destructive/20 ring-2"
-                                  : ""
-                              }
-                            >
-                              <SelectValue
-                                placeholder={
-                                  param.required
-                                    ? "Please select an option (Required)"
-                                    : "Select an option"
+                          <>
+                            {/* Render based on displayType */}
+                            {(param.displayType === "select" ||
+                              !param.displayType) && (
+                              <Select
+                                value={
+                                  formValues[param.name] === ""
+                                    ? "__none__"
+                                    : formValues[param.name] || "__none__"
                                 }
-                              />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {!param.required && (
-                                <SelectItem value="__none__">
-                                  <span className="text-muted-foreground italic">
-                                    None (clear selection)
-                                  </span>
-                                </SelectItem>
-                              )}
-                              {param.options && param.options.length > 0 ? (
-                                param.options
-                                  .filter(
-                                    (option) =>
-                                      option.value &&
-                                      option.value.trim() !== "" &&
-                                      option.label &&
-                                      option.label.trim() !== ""
-                                  )
-                                  .map((option, index) => (
-                                    <SelectItem
-                                      key={`${param.id}-${index}`}
-                                      value={option.value}
-                                    >
-                                      {option.label}
-                                    </SelectItem>
-                                  ))
-                              ) : (
-                                <SelectItem
-                                  key="no-options"
-                                  value="__no_options__"
-                                  disabled
+                                onValueChange={(value) => {
+                                  const actualValue =
+                                    value === "__none__" ? "" : value;
+                                  updateFormValue(param.name, actualValue);
+                                  const dependentParams = parameters.filter(
+                                    (p) =>
+                                      p.conditional?.parentParameter ===
+                                      param.name
+                                  );
+                                  dependentParams.forEach((depParam) => {
+                                    updateFormValue(depParam.name, "");
+                                  });
+                                }}
+                              >
+                                <SelectTrigger
+                                  className={
+                                    param.required &&
+                                    (!formValues[param.name] ||
+                                      formValues[param.name] === "")
+                                      ? "border-destructive ring-destructive/20 ring-2"
+                                      : ""
+                                  }
                                 >
-                                  No options available
-                                </SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
+                                  <SelectValue
+                                    placeholder={
+                                      param.required
+                                        ? "Please select an option (Required)"
+                                        : "Select an option"
+                                    }
+                                  />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {!param.required && (
+                                    <SelectItem value="__none__">
+                                      <span className="text-muted-foreground italic">
+                                        None (clear selection)
+                                      </span>
+                                    </SelectItem>
+                                  )}
+                                  {param.options && param.options.length > 0 ? (
+                                    param.options
+                                      .filter(
+                                        (option) =>
+                                          option.value &&
+                                          option.value.trim() !== "" &&
+                                          option.label &&
+                                          option.label.trim() !== ""
+                                      )
+                                      .map((option, index) => (
+                                        <SelectItem
+                                          key={`${param.id}-${index}`}
+                                          value={option.value}
+                                        >
+                                          <div className="flex flex-col">
+                                            <span>{option.label}</span>
+                                            {option.description && (
+                                              <span className="text-xs text-muted-foreground">
+                                                {option.description}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </SelectItem>
+                                      ))
+                                  ) : (
+                                    <SelectItem
+                                      key="no-options"
+                                      value="__no_options__"
+                                      disabled
+                                    >
+                                      No options available
+                                    </SelectItem>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            )}
+
+                            {/* Radio button rendering */}
+                            {param.displayType === "radio" && (
+                              <div className="space-y-3">
+                                {!param.required && (
+                                  <div className="flex items-center space-x-3 p-2 rounded hover:bg-gray-50">
+                                    <input
+                                      type="radio"
+                                      id={`${param.id}-none`}
+                                      name={param.name}
+                                      value=""
+                                      checked={
+                                        !formValues[param.name] ||
+                                        formValues[param.name] === ""
+                                      }
+                                      onChange={() => {
+                                        updateFormValue(param.name, "");
+                                        const dependentParams =
+                                          parameters.filter(
+                                            (p) =>
+                                              p.conditional?.parentParameter ===
+                                              param.name
+                                          );
+                                        dependentParams.forEach((depParam) => {
+                                          updateFormValue(depParam.name, "");
+                                        });
+                                      }}
+                                      className="w-4 h-4 text-primary focus:ring-primary"
+                                    />
+                                    <Label
+                                      htmlFor={`${param.id}-none`}
+                                      className="text-sm cursor-pointer text-muted-foreground italic"
+                                    >
+                                      None (clear selection)
+                                    </Label>
+                                  </div>
+                                )}
+                                {param.options && param.options.length > 0 ? (
+                                  param.options
+                                    .filter(
+                                      (option) =>
+                                        option.value &&
+                                        option.value.trim() !== "" &&
+                                        option.label &&
+                                        option.label.trim() !== ""
+                                    )
+                                    .map((option, index) => (
+                                      <div
+                                        key={`${param.id}-${index}`}
+                                        className="flex items-start space-x-3 p-3 rounded hover:bg-gray-50 border border-gray-200"
+                                      >
+                                        <input
+                                          type="radio"
+                                          id={`${param.id}-${option.value}`}
+                                          name={param.name}
+                                          value={option.value}
+                                          checked={
+                                            formValues[param.name] ===
+                                            option.value
+                                          }
+                                          onChange={() => {
+                                            updateFormValue(
+                                              param.name,
+                                              option.value
+                                            );
+                                            const dependentParams =
+                                              parameters.filter(
+                                                (p) =>
+                                                  p.conditional
+                                                    ?.parentParameter ===
+                                                  param.name
+                                              );
+                                            dependentParams.forEach(
+                                              (depParam) => {
+                                                updateFormValue(
+                                                  depParam.name,
+                                                  ""
+                                                );
+                                              }
+                                            );
+                                          }}
+                                          className="w-4 h-4 text-primary focus:ring-primary mt-0.5"
+                                        />
+                                        <Label
+                                          htmlFor={`${param.id}-${option.value}`}
+                                          className="flex-1 cursor-pointer"
+                                        >
+                                          <div className="flex flex-col">
+                                            <span className="font-medium">
+                                              {option.label}
+                                            </span>
+                                            {option.description && (
+                                              <span className="text-xs text-muted-foreground mt-1">
+                                                {option.description}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </Label>
+                                      </div>
+                                    ))
+                                ) : (
+                                  <div className="text-sm text-muted-foreground">
+                                    No options available
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Toggle button rendering */}
+                            {param.displayType === "toggle" && (
+                              <div className="space-y-2">
+                                {!param.required && (
+                                  <Button
+                                    variant={
+                                      !formValues[param.name] ||
+                                      formValues[param.name] === ""
+                                        ? "default"
+                                        : "outline"
+                                    }
+                                    size="sm"
+                                    onClick={() => {
+                                      updateFormValue(param.name, "");
+                                      const dependentParams = parameters.filter(
+                                        (p) =>
+                                          p.conditional?.parentParameter ===
+                                          param.name
+                                      );
+                                      dependentParams.forEach((depParam) => {
+                                        updateFormValue(depParam.name, "");
+                                      });
+                                    }}
+                                    className="mr-2 mb-2"
+                                  >
+                                    None
+                                  </Button>
+                                )}
+                                <div className="flex flex-wrap gap-2">
+                                  {param.options && param.options.length > 0 ? (
+                                    param.options
+                                      .filter(
+                                        (option) =>
+                                          option.value &&
+                                          option.value.trim() !== "" &&
+                                          option.label &&
+                                          option.label.trim() !== ""
+                                      )
+                                      .map((option, index) => (
+                                        <Button
+                                          key={`${param.id}-${index}`}
+                                          variant={
+                                            formValues[param.name] ===
+                                            option.value
+                                              ? "default"
+                                              : "outline"
+                                          }
+                                          size="sm"
+                                          onClick={() => {
+                                            updateFormValue(
+                                              param.name,
+                                              option.value
+                                            );
+                                            const dependentParams =
+                                              parameters.filter(
+                                                (p) =>
+                                                  p.conditional
+                                                    ?.parentParameter ===
+                                                  param.name
+                                              );
+                                            dependentParams.forEach(
+                                              (depParam) => {
+                                                updateFormValue(
+                                                  depParam.name,
+                                                  ""
+                                                );
+                                              }
+                                            );
+                                          }}
+                                          className="flex flex-col items-start h-auto p-3"
+                                          title={option.description}
+                                        >
+                                          <span className="font-medium">
+                                            {option.label}
+                                          </span>
+                                          {option.description && (
+                                            <span className="text-xs opacity-70 mt-1 text-left">
+                                              {option.description.length > 50
+                                                ? `${option.description.substring(
+                                                    0,
+                                                    50
+                                                  )}...`
+                                                : option.description}
+                                            </span>
+                                          )}
+                                        </Button>
+                                      ))
+                                  ) : (
+                                    <div className="text-sm text-muted-foreground">
+                                      No options available
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </>
                         )}
                         {param.type === "FixedOption" &&
                           param.required &&
@@ -2237,6 +3385,267 @@ export default function QuoteFormBuilder() {
                               This field is required
                             </div>
                           )}
+
+                        {/* Sub-options for selected FixedOption */}
+                        {param.type === "FixedOption" &&
+                          (() => {
+                            const selectedOption = param.options?.find(
+                              (opt) => opt.value === formValues[param.name]
+                            );
+                            const subOptionDisplayType =
+                              selectedOption?.displayType || "radio";
+
+                            return selectedOption?.subOptions &&
+                              selectedOption.subOptions.length > 0 ? (
+                              <div className="ml-4 mt-3 space-y-3 border-l-2 border-gray-200 pl-4">
+                                <Label className="text-sm font-medium text-gray-700">
+                                  Additional Options for {selectedOption.label}:
+                                </Label>
+
+                                {/* Radio display for sub-options */}
+                                {subOptionDisplayType === "radio" && (
+                                  <div className="space-y-2">
+                                    {/* Add "None" option for sub-options */}
+                                    <div className="flex items-center space-x-3 p-2 rounded hover:bg-gray-50">
+                                      <input
+                                        type="radio"
+                                        id={`suboption-none-${param.id}`}
+                                        name={`${param.name}_suboptions`}
+                                        value=""
+                                        checked={
+                                          !selectedOption.subOptions.some(
+                                            (subOption) =>
+                                              formValues[
+                                                `${param.name}_${subOption.value}`
+                                              ]
+                                          )
+                                        }
+                                        onChange={() => {
+                                          // Clear all sub-options when "None" is selected
+                                          selectedOption.subOptions?.forEach(
+                                            (subOption) => {
+                                              updateFormValue(
+                                                `${param.name}_${subOption.value}`,
+                                                false
+                                              );
+                                            }
+                                          );
+                                        }}
+                                        className="w-4 h-4 text-primary focus:ring-primary"
+                                      />
+                                      <Label
+                                        htmlFor={`suboption-none-${param.id}`}
+                                        className="text-sm cursor-pointer"
+                                      >
+                                        None (no additional options)
+                                      </Label>
+                                    </div>
+
+                                    {selectedOption.subOptions.map(
+                                      (subOption) => (
+                                        <div
+                                          key={subOption.id}
+                                          className="space-y-2"
+                                        >
+                                          <div className="flex items-center space-x-3 p-2 rounded hover:bg-gray-50">
+                                            <input
+                                              type="radio"
+                                              id={`suboption-${param.id}-${subOption.id}`}
+                                              name={`${param.name}_suboptions`}
+                                              value={subOption.value}
+                                              checked={
+                                                !!formValues[
+                                                  `${param.name}_${subOption.value}`
+                                                ]
+                                              }
+                                              onChange={() => {
+                                                // Clear all other sub-options first
+                                                selectedOption.subOptions?.forEach(
+                                                  (otherSubOption) => {
+                                                    updateFormValue(
+                                                      `${param.name}_${otherSubOption.value}`,
+                                                      false
+                                                    );
+                                                  }
+                                                );
+                                                // Then set this one to true
+                                                updateFormValue(
+                                                  `${param.name}_${subOption.value}`,
+                                                  true
+                                                );
+                                              }}
+                                              className="w-4 h-4 text-primary focus:ring-primary"
+                                            />
+                                            <Label
+                                              htmlFor={`suboption-${param.id}-${subOption.id}`}
+                                              className="text-sm font-medium flex items-center gap-2 cursor-pointer flex-1"
+                                            >
+                                              <div className="flex flex-col">
+                                                <span>{subOption.label}</span>
+                                                {subOption.price &&
+                                                  subOption.price > 0 && (
+                                                    <span className="text-green-600 font-medium text-xs">
+                                                      +
+                                                      {
+                                                        currencies[
+                                                          selectedCurrency
+                                                        ].symbol
+                                                      }
+                                                      <NumberFlow
+                                                        value={subOption.price}
+                                                        format={{
+                                                          minimumFractionDigits:
+                                                            selectedCurrency ===
+                                                            "IDR"
+                                                              ? 0
+                                                              : 2,
+                                                          maximumFractionDigits:
+                                                            selectedCurrency ===
+                                                            "IDR"
+                                                              ? 0
+                                                              : 2,
+                                                        }}
+                                                      />{" "}
+                                                      {subOption.pricingScope ===
+                                                      "per_qty"
+                                                        ? "per item"
+                                                        : "per unit"}
+                                                    </span>
+                                                  )}
+                                              </div>
+                                              {subOption.pricingScope ===
+                                                "per_unit" && (
+                                                <Badge
+                                                  variant="secondary"
+                                                  className="text-xs ml-auto"
+                                                >
+                                                  Per Unit
+                                                </Badge>
+                                              )}
+                                            </Label>
+                                          </div>
+                                          {subOption.description && (
+                                            <p className="text-xs text-muted-foreground ml-8">
+                                              {subOption.description}
+                                            </p>
+                                          )}
+                                        </div>
+                                      )
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* Toggle display for sub-options */}
+                                {subOptionDisplayType === "toggle" && (
+                                  <div className="space-y-2">
+                                    <Button
+                                      variant={
+                                        !selectedOption.subOptions.some(
+                                          (subOption) =>
+                                            formValues[
+                                              `${param.name}_${subOption.value}`
+                                            ]
+                                        )
+                                          ? "default"
+                                          : "outline"
+                                      }
+                                      size="sm"
+                                      onClick={() => {
+                                        // Clear all sub-options when "None" is selected
+                                        selectedOption.subOptions?.forEach(
+                                          (subOption) => {
+                                            updateFormValue(
+                                              `${param.name}_${subOption.value}`,
+                                              false
+                                            );
+                                          }
+                                        );
+                                      }}
+                                      className="mr-2 mb-2"
+                                    >
+                                      None
+                                    </Button>
+
+                                    <div className="flex flex-wrap gap-2">
+                                      {selectedOption.subOptions.map(
+                                        (subOption) => (
+                                          <Button
+                                            key={subOption.id}
+                                            variant={
+                                              formValues[
+                                                `${param.name}_${subOption.value}`
+                                              ]
+                                                ? "default"
+                                                : "outline"
+                                            }
+                                            size="sm"
+                                            onClick={() => {
+                                              // Clear all other sub-options first
+                                              selectedOption.subOptions?.forEach(
+                                                (otherSubOption) => {
+                                                  updateFormValue(
+                                                    `${param.name}_${otherSubOption.value}`,
+                                                    false
+                                                  );
+                                                }
+                                              );
+                                              // Then set this one to true
+                                              updateFormValue(
+                                                `${param.name}_${subOption.value}`,
+                                                true
+                                              );
+                                            }}
+                                            className="flex flex-col items-start h-auto p-3"
+                                            title={subOption.description}
+                                          >
+                                            <span className="font-medium">
+                                              {subOption.label}
+                                            </span>
+                                            {subOption.price &&
+                                              subOption.price > 0 && (
+                                                <span className="text-green-600 font-medium text-xs">
+                                                  +
+                                                  {
+                                                    currencies[selectedCurrency]
+                                                      .symbol
+                                                  }
+                                                  <NumberFlow
+                                                    value={subOption.price}
+                                                    format={{
+                                                      minimumFractionDigits:
+                                                        selectedCurrency ===
+                                                        "IDR"
+                                                          ? 0
+                                                          : 2,
+                                                      maximumFractionDigits:
+                                                        selectedCurrency ===
+                                                        "IDR"
+                                                          ? 0
+                                                          : 2,
+                                                    }}
+                                                  />
+                                                </span>
+                                              )}
+                                            {subOption.description && (
+                                              <span className="text-xs opacity-70 mt-1 text-left">
+                                                {subOption.description.length >
+                                                40
+                                                  ? `${subOption.description.substring(
+                                                      0,
+                                                      40
+                                                    )}...`
+                                                  : subOption.description}
+                                              </span>
+                                            )}
+                                          </Button>
+                                        )
+                                      )}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ) : null;
+                          })()}
 
                         {param.type === "NumericValue" && (
                           <>
@@ -2851,7 +4260,16 @@ export default function QuoteFormBuilder() {
                           </div>
                         </div>
                         <div className="font-mono">
-                          ${item.amount.toFixed(2)}
+                          {currencies[selectedCurrency].symbol}
+                          <NumberFlow
+                            value={item.amount}
+                            format={{
+                              minimumFractionDigits:
+                                selectedCurrency === "IDR" ? 0 : 2,
+                              maximumFractionDigits:
+                                selectedCurrency === "IDR" ? 0 : 2,
+                            }}
+                          />
                         </div>
                       </div>
                     ))}
@@ -2873,7 +4291,16 @@ export default function QuoteFormBuilder() {
                           >
                             <span>Price per unit</span>
                             <span className="font-mono">
-                              ${unitTotal.toFixed(2)}
+                              {currencies[selectedCurrency].symbol}
+                              <NumberFlow
+                                value={unitTotal}
+                                format={{
+                                  minimumFractionDigits:
+                                    selectedCurrency === "IDR" ? 0 : 2,
+                                  maximumFractionDigits:
+                                    selectedCurrency === "IDR" ? 0 : 2,
+                                }}
+                              />
                             </span>
                           </div>
                           <div
@@ -2893,7 +4320,16 @@ export default function QuoteFormBuilder() {
                     >
                       <span>Total</span>
                       <span className="font-mono">
-                        ${totalPrice.toFixed(2)}
+                        {currencies[selectedCurrency].symbol}
+                        <NumberFlow
+                          value={totalPrice}
+                          format={{
+                            minimumFractionDigits:
+                              selectedCurrency === "IDR" ? 0 : 2,
+                            maximumFractionDigits:
+                              selectedCurrency === "IDR" ? 0 : 2,
+                          }}
+                        />
                       </span>
                     </div>
                   </>
