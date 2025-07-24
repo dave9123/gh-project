@@ -35,7 +35,6 @@ interface PricingRule {
     threshold: number;
     step_amount: number;
   };
-  unit?: string;
 }
 
 interface FixedOption {
@@ -70,6 +69,22 @@ export interface Parameter {
 interface FormValues {
   [key: string]: any;
 }
+
+// Safe expression evaluator for basic math operations
+const evaluateExpression = (expression: string): number => {
+  try {
+    // Remove any non-mathematical characters for safety
+    const sanitized = expression.replace(/[^0-9+\-*/().\s]/g, "");
+
+    // Use Function constructor instead of eval for better safety
+    const func = new Function("return " + sanitized);
+    const result = func();
+
+    return typeof result === "number" && !isNaN(result) ? result : 0;
+  } catch (e) {
+    return 0;
+  }
+};
 
 export default function QuoteFormBuilder() {
   const [parameters, setParameters] = useState<Parameter[]>([]);
@@ -251,7 +266,7 @@ export default function QuoteFormBuilder() {
 
     const calculatedValues = { ...formValues };
 
-    // First, calculate all derived values
+    // Calculate all derived values using current form values
     parameters
       .filter(
         (p) => p.type === "DerivedCalc" && isParameterVisible(p, formValues)
@@ -261,12 +276,15 @@ export default function QuoteFormBuilder() {
           try {
             let formula = param.formula;
             param.dependencies.forEach((dep) => {
-              const value = calculatedValues[dep] || 0;
-              formula = formula.replace(new RegExp(dep, "g"), value.toString());
+              const value = Number.parseFloat(calculatedValues[dep]) || 0;
+              formula = formula.replace(
+                new RegExp(`\\b${dep}\\b`, "g"),
+                value.toString()
+              );
             });
-            calculatedValues[param.name] = eval(
-              formula.replace(/[^0-9+\-*/().\s]/g, "")
-            );
+            // Simple math expression evaluator (safer than eval)
+            const result = evaluateExpression(formula);
+            calculatedValues[param.name] = result;
           } catch (e) {
             calculatedValues[param.name] = 0;
           }
@@ -368,12 +386,91 @@ export default function QuoteFormBuilder() {
     setPriceBreakdown(breakdown);
   };
 
+  // Initialize derived calculations
+  const initializeDerivedCalcs = () => {
+    setFormValues((prev) => {
+      const newValues = { ...prev };
+
+      parameters
+        .filter((p) => p.type === "DerivedCalc")
+        .forEach((param) => {
+          if (param.formula && param.dependencies) {
+            try {
+              let formula = param.formula;
+              param.dependencies.forEach((dep) => {
+                const depValue = Number.parseFloat(newValues[dep]) || 0;
+                formula = formula.replace(
+                  new RegExp(`\\b${dep}\\b`, "g"),
+                  depValue.toString()
+                );
+              });
+              const result = evaluateExpression(formula);
+              newValues[param.name] = result;
+            } catch (e) {
+              newValues[param.name] = 0;
+            }
+          }
+        });
+
+      return newValues;
+    });
+  };
+
+  // Run initialization when parameters change
+  useEffect(() => {
+    initializeDerivedCalcs();
+  }, [parameters]);
+
   useEffect(() => {
     calculatePrice();
   }, [formValues, parameters]);
 
   const updateFormValue = (name: string, value: any) => {
-    setFormValues((prev) => ({ ...prev, [name]: value }));
+    setFormValues((prev) => {
+      const newValues = { ...prev, [name]: value };
+
+      // Immediately calculate any derived values that depend on this parameter
+      parameters
+        .filter(
+          (p) => p.type === "DerivedCalc" && p.dependencies?.includes(name)
+        )
+        .forEach((param) => {
+          if (param.formula && param.dependencies) {
+            try {
+              let formula = param.formula;
+              let hasAllDependencies = true;
+
+              param.dependencies.forEach((dep) => {
+                const depValue =
+                  dep === name
+                    ? Number.parseFloat(value) || 0
+                    : Number.parseFloat(newValues[dep]);
+
+                if (isNaN(depValue)) {
+                  hasAllDependencies = false;
+                  return;
+                }
+
+                formula = formula.replace(
+                  new RegExp(`\\b${dep}\\b`, "g"),
+                  depValue.toString()
+                );
+              });
+
+              if (hasAllDependencies) {
+                const result = evaluateExpression(formula);
+                newValues[param.name] = result;
+              } else {
+                newValues[param.name] = 0;
+              }
+            } catch (e) {
+              newValues[param.name] = 0;
+            }
+          }
+        });
+
+      return newValues;
+    });
   };
 
   const loadSample = (sampleName: string) => {
@@ -676,21 +773,60 @@ export default function QuoteFormBuilder() {
                           updateParameter(param.id, { formula: e.target.value })
                         }
                       />
-                      <Label>
-                        Dependencies (comma-separated parameter names)
-                      </Label>
-                      <Input
-                        placeholder="e.g., length, width"
-                        value={param.dependencies?.join(", ") || ""}
-                        onChange={(e) =>
-                          updateParameter(param.id, {
-                            dependencies: e.target.value
-                              .split(",")
-                              .map((s) => s.trim())
-                              .filter(Boolean),
-                          })
-                        }
-                      />
+                      <Label>Dependencies</Label>
+                      <div className="space-y-2">
+                        <div className="text-sm text-muted-foreground">
+                          Select the numeric parameters this calculation depends
+                          on:
+                        </div>
+                        <div className="space-y-2 max-h-32 overflow-y-auto border rounded-lg p-2">
+                          {parameters
+                            .filter(
+                              (p) =>
+                                p.id !== param.id &&
+                                (p.type === "NumericValue" ||
+                                  p.name === "quantity")
+                            )
+                            .map((p) => (
+                              <div
+                                key={p.id}
+                                className="flex items-center space-x-2"
+                              >
+                                <input
+                                  type="checkbox"
+                                  id={`dep-${param.id}-${p.id}`}
+                                  checked={
+                                    param.dependencies?.includes(p.name) ||
+                                    false
+                                  }
+                                  onChange={(e) => {
+                                    const currentDeps =
+                                      param.dependencies || [];
+                                    const newDeps = e.target.checked
+                                      ? [...currentDeps, p.name]
+                                      : currentDeps.filter(
+                                          (dep) => dep !== p.name
+                                        );
+
+                                    updateParameter(param.id, {
+                                      dependencies: newDeps,
+                                    });
+                                  }}
+                                  className="rounded"
+                                />
+                                <Label htmlFor={`dep-${param.id}-${p.id}`}>
+                                  {p.label || p.name} {p.unit && `(${p.unit})`}
+                                </Label>
+                              </div>
+                            ))}
+                        </div>
+                        {param.dependencies &&
+                          param.dependencies.length > 0 && (
+                            <div className="text-sm text-muted-foreground">
+                              Selected: {param.dependencies.join(", ")}
+                            </div>
+                          )}
+                      </div>
                     </div>
                   )}
 
@@ -806,312 +942,6 @@ export default function QuoteFormBuilder() {
                             </div>
                           </div>
                         )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Sub-Parameters Section */}
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        id={`subparams-${param.id}`}
-                        checked={!!param.hasSubParameters}
-                        onCheckedChange={(checked) => {
-                          updateParameter(param.id, {
-                            hasSubParameters: checked,
-                          });
-                          if (!checked) {
-                            updateParameter(param.id, { subParameters: [] });
-                          }
-                        }}
-                      />
-                      <Label htmlFor={`subparams-${param.id}`}>
-                        Enable sub-parameters (like Material options)
-                      </Label>
-                    </div>
-
-                    {param.hasSubParameters && (
-                      <div className="border rounded-lg p-3 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-base font-medium">
-                            Sub-Parameters
-                          </Label>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => addSubParameter(param.id)}
-                            className="flex items-center gap-2"
-                          >
-                            <Plus className="w-3 h-3" />
-                            Add Sub-Parameter
-                          </Button>
-                        </div>
-
-                        {param.subParameters &&
-                          param.subParameters.length > 0 && (
-                            <div className="space-y-3">
-                              {param.subParameters.map((subParam) => (
-                                <div
-                                  key={subParam.id}
-                                  className="border rounded-lg p-3 bg-gray-50 space-y-3"
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-sm font-medium">
-                                      {subParam.label ||
-                                        subParam.name ||
-                                        "Sub-Parameter"}
-                                    </span>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() =>
-                                        deleteSubParameter(
-                                          param.id,
-                                          subParam.id
-                                        )
-                                      }
-                                      className="text-destructive hover:text-destructive h-6 w-6 p-0"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </Button>
-                                  </div>
-
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <Input
-                                      placeholder="Sub-parameter name"
-                                      value={subParam.name}
-                                      onChange={(e) =>
-                                        updateSubParameter(
-                                          param.id,
-                                          subParam.id,
-                                          { name: e.target.value }
-                                        )
-                                      }
-                                    />
-                                    <Input
-                                      placeholder="Display label"
-                                      value={subParam.label}
-                                      onChange={(e) =>
-                                        updateSubParameter(
-                                          param.id,
-                                          subParam.id,
-                                          { label: e.target.value }
-                                        )
-                                      }
-                                    />
-                                  </div>
-
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <Select
-                                      value={
-                                        subParam.pricingScope || "per_unit"
-                                      }
-                                      onValueChange={(
-                                        value: "per_unit" | "per_quantity"
-                                      ) =>
-                                        updateSubParameter(
-                                          param.id,
-                                          subParam.id,
-                                          { pricingScope: value }
-                                        )
-                                      }
-                                    >
-                                      <SelectTrigger>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="per_unit">
-                                          Per Unit
-                                        </SelectItem>
-                                        <SelectItem value="per_quantity">
-                                          Per Quantity
-                                        </SelectItem>
-                                      </SelectContent>
-                                    </Select>
-
-                                    <div className="flex items-center space-x-2">
-                                      <Switch
-                                        id={`required-sub-${subParam.id}`}
-                                        checked={subParam.required}
-                                        onCheckedChange={(checked) =>
-                                          updateSubParameter(
-                                            param.id,
-                                            subParam.id,
-                                            { required: checked }
-                                          )
-                                        }
-                                      />
-                                      <Label
-                                        htmlFor={`required-sub-${subParam.id}`}
-                                        className="text-sm"
-                                      >
-                                        Required
-                                      </Label>
-                                    </div>
-                                  </div>
-
-                                  {/* Sub-parameter options */}
-                                  <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                      <Label className="text-sm">Options</Label>
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                          const newOption: FixedOption = {
-                                            label: "",
-                                            value: "",
-                                            pricing: {},
-                                          };
-                                          updateSubParameter(
-                                            param.id,
-                                            subParam.id,
-                                            {
-                                              options: [
-                                                ...(subParam.options || []),
-                                                newOption,
-                                              ],
-                                            }
-                                          );
-                                        }}
-                                        className="h-6 text-xs"
-                                      >
-                                        Add Option
-                                      </Button>
-                                    </div>
-
-                                    {subParam.options?.map(
-                                      (option, optionIndex) => (
-                                        <div
-                                          key={optionIndex}
-                                          className="border rounded p-2 space-y-2 bg-white"
-                                        >
-                                          <div className="flex items-center justify-between">
-                                            <span className="text-xs font-medium">
-                                              Option {optionIndex + 1}
-                                            </span>
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={() => {
-                                                const newOptions =
-                                                  subParam.options?.filter(
-                                                    (_, i) => i !== optionIndex
-                                                  ) || [];
-                                                updateSubParameter(
-                                                  param.id,
-                                                  subParam.id,
-                                                  { options: newOptions }
-                                                );
-                                              }}
-                                              className="text-destructive hover:text-destructive h-4 w-4 p-0"
-                                            >
-                                              <Trash2 className="w-2 h-2" />
-                                            </Button>
-                                          </div>
-
-                                          <div className="grid grid-cols-2 gap-1">
-                                            <Input
-                                              placeholder="Label (e.g., PLA)"
-                                              value={option.label}
-                                              onChange={(e) => {
-                                                const newOptions = [
-                                                  ...(subParam.options || []),
-                                                ];
-                                                newOptions[optionIndex] = {
-                                                  ...option,
-                                                  label: e.target.value,
-                                                };
-                                                updateSubParameter(
-                                                  param.id,
-                                                  subParam.id,
-                                                  { options: newOptions }
-                                                );
-                                              }}
-                                              className="h-7 text-xs"
-                                            />
-                                            <Input
-                                              placeholder="Value (e.g., pla)"
-                                              value={option.value}
-                                              onChange={(e) => {
-                                                const newOptions = [
-                                                  ...(subParam.options || []),
-                                                ];
-                                                newOptions[optionIndex] = {
-                                                  ...option,
-                                                  value: e.target.value,
-                                                };
-                                                updateSubParameter(
-                                                  param.id,
-                                                  subParam.id,
-                                                  { options: newOptions }
-                                                );
-                                              }}
-                                              className="h-7 text-xs"
-                                            />
-                                          </div>
-
-                                          <div className="grid grid-cols-2 gap-1">
-                                            <Input
-                                              type="number"
-                                              step="0.01"
-                                              placeholder="Unit Price (e.g., 800)"
-                                              value={
-                                                option.pricing.unit_price || ""
-                                              }
-                                              onChange={(e) => {
-                                                const newOptions = [
-                                                  ...(subParam.options || []),
-                                                ];
-                                                newOptions[optionIndex] = {
-                                                  ...option,
-                                                  pricing: {
-                                                    ...option.pricing,
-                                                    unit_price:
-                                                      Number.parseFloat(
-                                                        e.target.value
-                                                      ) || undefined,
-                                                  },
-                                                };
-                                                updateSubParameter(
-                                                  param.id,
-                                                  subParam.id,
-                                                  { options: newOptions }
-                                                );
-                                              }}
-                                              className="h-7 text-xs"
-                                            />
-                                            <Input
-                                              placeholder="Unit (e.g., /gr)"
-                                              value={option.pricing.unit || ""}
-                                              onChange={(e) => {
-                                                const newOptions = [
-                                                  ...(subParam.options || []),
-                                                ];
-                                                newOptions[optionIndex] = {
-                                                  ...option,
-                                                  pricing: {
-                                                    ...option.pricing,
-                                                    unit: e.target.value,
-                                                  },
-                                                };
-                                                updateSubParameter(
-                                                  param.id,
-                                                  subParam.id,
-                                                  { options: newOptions }
-                                                );
-                                              }}
-                                              className="h-7 text-xs"
-                                            />
-                                          </div>
-                                        </div>
-                                      )
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
                       </div>
                     )}
                   </div>
@@ -1309,12 +1139,29 @@ export default function QuoteFormBuilder() {
                       )}
 
                       {param.type === "DerivedCalc" && (
-                        <Input
-                          id={`form-${param.id}`}
-                          value={formValues[param.name] || 0}
-                          disabled
-                          className="bg-muted"
-                        />
+                        <div className="space-y-2">
+                          <Input
+                            id={`form-${param.id}`}
+                            value={
+                              typeof formValues[param.name] === "number"
+                                ? formValues[param.name].toFixed(2)
+                                : formValues[param.name] || "0.00"
+                            }
+                            disabled
+                            className="bg-muted font-mono"
+                          />
+                          {param.formula && (
+                            <div className="text-xs text-muted-foreground">
+                              Formula: {param.formula}
+                            </div>
+                          )}
+                          {param.dependencies &&
+                            param.dependencies.length > 0 && (
+                              <div className="text-xs text-muted-foreground">
+                                Depends on: {param.dependencies.join(", ")}
+                              </div>
+                            )}
+                        </div>
                       )}
                     </div>
                   ))}
