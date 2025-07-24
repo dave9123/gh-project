@@ -2,6 +2,10 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { NavUser } from "./nav-user";
+import {
+  IconAlignBoxBottomRight,
+  IconAlignBoxBottomRightFilled,
+} from "@tabler/icons-react";
 
 export function SiteHeader() {
   return (
@@ -21,8 +25,17 @@ export function SiteHeader() {
               height={25}
             /> */}
           </div>
-          <span className=" font-semibold text-xl">Enterprise Dashboard</span>
+          <IconAlignBoxBottomRightFilled className="!size-5" />
+
+          <span className=" font-semibold text-xl"> Dashboard</span>
         </div>
+        <Separator
+          orientation="vertical"
+          className="mx-2 data-[orientation=vertical]:h-4 hidden lg:block"
+        />
+
+        <div>s</div>
+
         <div className="ml-auto flex items-center gap-2 cursor-pointer">
           <NavUser
             user={{
