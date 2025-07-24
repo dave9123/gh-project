@@ -5,6 +5,8 @@ import enterprise from "./api/enterprise";
 import files from "./api/files";
 import orders from "./api/orders";
 
+import "dotenv/config";
+
 const app = express();
 
 app.use(express.json());
