@@ -1,4 +1,8 @@
 {
+	"scripts": {
+		"migrations:generate": "drizzle-kit generate",
+		"migrations:push": "drizzle-kit push"
+	},
 	"dependencies": {
 		"baileys": "^6.7.18",
 		"dotenv": "^17.2.0",
