@@ -1,6 +1,7 @@
 import express from 'express';
 import db from '../../../modules/db';
 import { usersTable } from '../../../../db/schema';
+import { describe } from 'node:test';
 const router = express.Router();
 
 router.post('/create', (req, res) => {
@@ -12,6 +13,15 @@ router.post('/create', (req, res) => {
     db.insert(usersTable).values({
     })
   */
+
+
+  res.send({
+    generatedId: "",
+    name: "",
+    description: "",
+    currencyType: "USD", // or "IDR"
+    basePrice: 0,
+  })
 });
 
 /*
