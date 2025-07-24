@@ -55,6 +55,7 @@ export interface Parameter {
   max?: number;
   step?: number;
   unit?: string;
+  unitsPerQuantity?: number; // How many units are in one quantity
   formula?: string;
   dependencies?: string[];
   conditional?: {
@@ -267,29 +268,57 @@ export default function QuoteFormBuilder() {
     const calculatedValues = { ...formValues };
 
     // Calculate all derived values using current form values
-    parameters
-      .filter(
-        (p) => p.type === "DerivedCalc" && isParameterVisible(p, formValues)
-      )
-      .forEach((param) => {
-        if (param.formula && param.dependencies) {
-          try {
-            let formula = param.formula;
-            param.dependencies.forEach((dep) => {
-              const value = Number.parseFloat(calculatedValues[dep]) || 0;
-              formula = formula.replace(
-                new RegExp(`\\b${dep}\\b`, "g"),
-                value.toString()
-              );
-            });
-            // Simple math expression evaluator (safer than eval)
+    // We need to calculate them in dependency order
+    const derivedParams = parameters.filter(
+      (p) => p.type === "DerivedCalc" && isParameterVisible(p, formValues)
+    );
+
+    // Sort by dependency order (params with no deps first, then those that depend on already calculated ones)
+    const sortedDerivedParams = [...derivedParams].sort((a, b) => {
+      const aDeps = a.dependencies || [];
+      const bDeps = b.dependencies || [];
+
+      // If a has no dependencies but b does, a comes first
+      if (aDeps.length === 0 && bDeps.length > 0) return -1;
+      if (bDeps.length === 0 && aDeps.length > 0) return 1;
+
+      // If a depends on b, b comes first
+      if (aDeps.includes(b.name)) return 1;
+      if (bDeps.includes(a.name)) return -1;
+
+      return 0;
+    });
+
+    // Calculate derived values in order
+    sortedDerivedParams.forEach((param) => {
+      if (param.formula && param.dependencies) {
+        try {
+          let formula = param.formula;
+          let hasAllDependencies = true;
+
+          param.dependencies.forEach((dep) => {
+            const value = Number.parseFloat(calculatedValues[dep]);
+            if (isNaN(value)) {
+              hasAllDependencies = false;
+              return;
+            }
+            formula = formula.replace(
+              new RegExp(`\\b${dep}\\b`, "g"),
+              value.toString()
+            );
+          });
+
+          if (hasAllDependencies) {
             const result = evaluateExpression(formula);
             calculatedValues[param.name] = result;
-          } catch (e) {
+          } else {
             calculatedValues[param.name] = 0;
           }
+        } catch (e) {
+          calculatedValues[param.name] = 0;
         }
-      });
+      }
+    });
 
     // Calculate unit price for each parameter (excluding quantity)
     parameters
@@ -320,6 +349,13 @@ export default function QuoteFormBuilder() {
                 (description ? " + " : "") +
                 `Option: $${selectedOption.pricing.base_price}`;
             }
+            if (selectedOption.pricing.unit_price) {
+              const unitCost = selectedOption.pricing.unit_price;
+              paramTotal += unitCost;
+              description +=
+                (description ? " + " : "") +
+                `$${selectedOption.pricing.unit_price} per unit`;
+            }
             if (selectedOption.pricing.multiplier) {
               paramTotal *= selectedOption.pricing.multiplier;
               description +=
@@ -332,21 +368,23 @@ export default function QuoteFormBuilder() {
           param.type === "DerivedCalc"
         ) {
           const numValue = Number.parseFloat(value) || 0;
+          const unitsPerQty = param.unitsPerQuantity || 1; // Default to 1 if not specified
+          const totalUnits = numValue * unitsPerQty;
 
           if (param.pricing.unit_price) {
-            const unitCost = numValue * param.pricing.unit_price;
+            const unitCost = totalUnits * param.pricing.unit_price;
             paramTotal += unitCost;
             description +=
               (description ? " + " : "") +
-              `${numValue} × $${param.pricing.unit_price}`;
+              `${totalUnits} units (${numValue} × ${unitsPerQty}) × $${param.pricing.unit_price}`;
           }
 
           if (
             param.pricing.step_pricing &&
-            numValue > param.pricing.step_pricing.threshold
+            totalUnits > param.pricing.step_pricing.threshold
           ) {
             const steps = Math.floor(
-              numValue - param.pricing.step_pricing.threshold
+              totalUnits - param.pricing.step_pricing.threshold
             );
             const stepCost = steps * param.pricing.step_pricing.step_amount;
             paramTotal += stepCost;
@@ -365,7 +403,7 @@ export default function QuoteFormBuilder() {
         if (paramTotal > 0) {
           breakdown.push({
             parameter: param.label || param.name,
-            description: `${description} (per unit)`,
+            description: `${description}`,
             amount: paramTotal,
           });
           unitTotal += paramTotal;
@@ -373,13 +411,15 @@ export default function QuoteFormBuilder() {
       });
 
     // Add quantity breakdown if quantity > 1
-    if (quantity > 1 && unitTotal > 0) {
-      breakdown.push({
-        parameter: "Quantity",
-        description: `${unitTotal.toFixed(2)} × ${quantity} units`,
-        amount: unitTotal * (quantity - 1), // Additional cost beyond the first unit
-      });
-    }
+    // if (quantity > 1 && unitTotal > 0) {
+    //   breakdown.push({
+    //     parameter: "Quantity Multiplier",
+    //     description: `Price per unit: $${unitTotal.toFixed(
+    //       2
+    //     )} × ${quantity} quantity`,
+    //     amount: unitTotal * (quantity + 1), // Additional cost beyond the first unit
+    //   });
+    // }
 
     const finalTotal = unitTotal * quantity;
     setTotalPrice(finalTotal);
@@ -429,12 +469,22 @@ export default function QuoteFormBuilder() {
     setFormValues((prev) => {
       const newValues = { ...prev, [name]: value };
 
-      // Immediately calculate any derived values that depend on this parameter
-      parameters
-        .filter(
-          (p) => p.type === "DerivedCalc" && p.dependencies?.includes(name)
-        )
-        .forEach((param) => {
+      // Calculate derived values that depend on this parameter
+      // We need to do this in dependency order to handle chained calculations
+      const derivedParams = parameters.filter(
+        (p) => p.type === "DerivedCalc" && p.dependencies?.includes(name)
+      );
+
+      // Keep calculating until no more changes occur (handles chained dependencies)
+      let hasChanges = true;
+      let iterations = 0;
+      const maxIterations = 10; // Prevent infinite loops
+
+      while (hasChanges && iterations < maxIterations) {
+        hasChanges = false;
+        iterations++;
+
+        derivedParams.forEach((param) => {
           if (param.formula && param.dependencies) {
             try {
               let formula = param.formula;
@@ -459,15 +509,67 @@ export default function QuoteFormBuilder() {
 
               if (hasAllDependencies) {
                 const result = evaluateExpression(formula);
-                newValues[param.name] = result;
+                const currentValue = newValues[param.name];
+                if (currentValue !== result) {
+                  newValues[param.name] = result;
+                  hasChanges = true;
+                }
               } else {
-                newValues[param.name] = 0;
+                if (newValues[param.name] !== 0) {
+                  newValues[param.name] = 0;
+                  hasChanges = true;
+                }
               }
             } catch (e) {
-              newValues[param.name] = 0;
+              if (newValues[param.name] !== 0) {
+                newValues[param.name] = 0;
+                hasChanges = true;
+              }
             }
           }
         });
+
+        // Also check for any other derived params that might now have their dependencies satisfied
+        const otherDerivedParams = parameters.filter(
+          (p) =>
+            p.type === "DerivedCalc" &&
+            !derivedParams.includes(p) &&
+            p.dependencies?.some((dep) => newValues.hasOwnProperty(dep))
+        );
+
+        otherDerivedParams.forEach((param) => {
+          if (param.formula && param.dependencies) {
+            try {
+              let formula = param.formula;
+              let hasAllDependencies = true;
+
+              param.dependencies.forEach((dep) => {
+                const depValue = Number.parseFloat(newValues[dep]);
+                if (isNaN(depValue)) {
+                  hasAllDependencies = false;
+                  return;
+                }
+
+                formula = formula.replace(
+                  new RegExp(`\\b${dep}\\b`, "g"),
+                  depValue.toString()
+                );
+              });
+
+              if (hasAllDependencies) {
+                const result = evaluateExpression(formula);
+                const currentValue = newValues[param.name];
+                if (currentValue !== result) {
+                  newValues[param.name] = result;
+                  hasChanges = true;
+                }
+              }
+            } catch (e) {
+              // Error in calculation
+            }
+          }
+        });
+      }
 
       return newValues;
     });
@@ -481,6 +583,8 @@ export default function QuoteFormBuilder() {
       setFormValues({ quantity: formValues.quantity || "1" }); // Preserve quantity when loading new sample
     }
   };
+
+  console.log(parameters, JSON.stringify(parameters));
 
   return (
     <div className="container mx-auto p-6 max-w-7xl">
@@ -700,6 +804,22 @@ export default function QuoteFormBuilder() {
                             <Input
                               type="number"
                               step="0.01"
+                              placeholder="Unit Price"
+                              value={option.pricing.unit_price || ""}
+                              onChange={(e) =>
+                                updateOption(param.id, index, {
+                                  pricing: {
+                                    ...option.pricing,
+                                    unit_price:
+                                      Number.parseFloat(e.target.value) ||
+                                      undefined,
+                                  },
+                                })
+                              }
+                            />
+                            <Input
+                              type="number"
+                              step="0.01"
                               placeholder="Multiplier"
                               value={option.pricing.multiplier || ""}
                               onChange={(e) =>
@@ -720,46 +840,68 @@ export default function QuoteFormBuilder() {
                   )}
 
                   {param.type === "NumericValue" && (
-                    <div className="grid grid-cols-4 gap-2">
-                      <Input
-                        type="number"
-                        placeholder="Min"
-                        value={param.min || ""}
-                        onChange={(e) =>
-                          updateParameter(param.id, {
-                            min: Number.parseFloat(e.target.value) || undefined,
-                          })
-                        }
-                      />
-                      <Input
-                        type="number"
-                        placeholder="Max"
-                        value={param.max || ""}
-                        onChange={(e) =>
-                          updateParameter(param.id, {
-                            max: Number.parseFloat(e.target.value) || undefined,
-                          })
-                        }
-                      />
-                      <Input
-                        type="number"
-                        step="0.01"
-                        placeholder="Step"
-                        value={param.step || ""}
-                        onChange={(e) =>
-                          updateParameter(param.id, {
-                            step:
-                              Number.parseFloat(e.target.value) || undefined,
-                          })
-                        }
-                      />
-                      <Input
-                        placeholder="Unit"
-                        value={param.unit || ""}
-                        onChange={(e) =>
-                          updateParameter(param.id, { unit: e.target.value })
-                        }
-                      />
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-4 gap-2">
+                        <Input
+                          type="number"
+                          placeholder="Min"
+                          value={param.min || ""}
+                          onChange={(e) =>
+                            updateParameter(param.id, {
+                              min:
+                                Number.parseFloat(e.target.value) || undefined,
+                            })
+                          }
+                        />
+                        <Input
+                          type="number"
+                          placeholder="Max"
+                          value={param.max || ""}
+                          onChange={(e) =>
+                            updateParameter(param.id, {
+                              max:
+                                Number.parseFloat(e.target.value) || undefined,
+                            })
+                          }
+                        />
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="Step"
+                          value={param.step || ""}
+                          onChange={(e) =>
+                            updateParameter(param.id, {
+                              step:
+                                Number.parseFloat(e.target.value) || undefined,
+                            })
+                          }
+                        />
+                        <Input
+                          placeholder="Unit"
+                          value={param.unit || ""}
+                          onChange={(e) =>
+                            updateParameter(param.id, { unit: e.target.value })
+                          }
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-sm">Units per Quantity</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="e.g., 1000 (if 1 quantity = 1000 units)"
+                          value={param.unitsPerQuantity || ""}
+                          onChange={(e) =>
+                            updateParameter(param.id, {
+                              unitsPerQuantity:
+                                Number.parseFloat(e.target.value) || undefined,
+                            })
+                          }
+                        />
+                        <div className="text-xs text-muted-foreground mt-1">
+                          How many units are included in one quantity item
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -773,6 +915,24 @@ export default function QuoteFormBuilder() {
                           updateParameter(param.id, { formula: e.target.value })
                         }
                       />
+                      <div>
+                        <Label className="text-sm">Units per Quantity</Label>
+                        <Input
+                          type="number"
+                          step="0.01"
+                          placeholder="e.g., 1000 (if 1 quantity = 1000 units)"
+                          value={param.unitsPerQuantity || ""}
+                          onChange={(e) =>
+                            updateParameter(param.id, {
+                              unitsPerQuantity:
+                                Number.parseFloat(e.target.value) || undefined,
+                            })
+                          }
+                        />
+                        <div className="text-xs text-muted-foreground mt-1">
+                          How many units are included in one quantity item
+                        </div>
+                      </div>
                       <Label>Dependencies</Label>
                       <div className="space-y-2">
                         <div className="text-sm text-muted-foreground">
@@ -785,6 +945,7 @@ export default function QuoteFormBuilder() {
                               (p) =>
                                 p.id !== param.id &&
                                 (p.type === "NumericValue" ||
+                                  p.type === "DerivedCalc" ||
                                   p.name === "quantity")
                             )
                             .map((p) => (
@@ -878,7 +1039,9 @@ export default function QuoteFormBuilder() {
                                 .filter(
                                   (p) =>
                                     p.id !== param.id &&
-                                    p.type === "FixedOption"
+                                    p.type === "FixedOption" &&
+                                    p.name &&
+                                    p.name.trim() !== ""
                                 )
                                 .map((p) => (
                                   <SelectItem key={p.id} value={p.name}>
@@ -1087,6 +1250,12 @@ export default function QuoteFormBuilder() {
                             ({param.unit})
                           </span>
                         )}
+                        {param.unitsPerQuantity &&
+                          param.unitsPerQuantity > 1 && (
+                            <span className="text-muted-foreground ml-1 text-xs">
+                              [{param.unitsPerQuantity} units per quantity]
+                            </span>
+                          )}
                         {param.conditional && (
                           <Badge variant="secondary" className="ml-2 text-xs">
                             Conditional
@@ -1112,14 +1281,32 @@ export default function QuoteFormBuilder() {
                             <SelectValue placeholder="Select an option" />
                           </SelectTrigger>
                           <SelectContent>
-                            {param.options?.map((option) => (
+                            {param.options && param.options.length > 0 ? (
+                              param.options
+                                .filter(
+                                  (option) =>
+                                    option.value &&
+                                    option.value.trim() !== "" &&
+                                    option.label &&
+                                    option.label.trim() !== ""
+                                )
+                                .map((option, index) => (
+                                  <SelectItem
+                                    key={`${param.id}-${index}`}
+                                    value={option.value}
+                                  >
+                                    {option.label}
+                                  </SelectItem>
+                                ))
+                            ) : (
                               <SelectItem
-                                key={option.value}
-                                value={option.value}
+                                key="no-options"
+                                value="__no_options__"
+                                disabled
                               >
-                                {option.label}
+                                No options available
                               </SelectItem>
-                            ))}
+                            )}
                           </SelectContent>
                         </Select>
                       )}
@@ -1194,31 +1381,42 @@ export default function QuoteFormBuilder() {
                         </div>
                       </div>
                     ))}
-                    <Separator />
+                    <Separator key="main-separator" />
                     {(() => {
                       const quantity =
                         Number.parseFloat(formValues.quantity) || 1;
                       const unitTotal = priceBreakdown
-                        .filter((item) => item.parameter !== "Quantity")
+                        .filter(
+                          (item) => item.parameter !== "Quantity Multiplier"
+                        )
                         .reduce((sum, item) => sum + item.amount, 0);
 
                       return quantity > 1 ? (
                         <>
-                          <div className="flex justify-between items-center text-base">
-                            <span>Subtotal (per unit)</span>
+                          <div
+                            key="subtotal"
+                            className="flex justify-between items-center text-base"
+                          >
+                            <span>Price per unit</span>
                             <span className="font-mono">
                               ${unitTotal.toFixed(2)}
                             </span>
                           </div>
-                          <div className="flex justify-between items-center text-base">
-                            <span>Quantity</span>
+                          <div
+                            key="quantity-multiplier"
+                            className="flex justify-between items-center text-base"
+                          >
+                            <span>Quantity ordered</span>
                             <span className="font-mono">× {quantity}</span>
                           </div>
-                          <Separator />
+                          <Separator key="quantity-separator" />
                         </>
                       ) : null;
                     })()}
-                    <div className="flex justify-between items-center text-lg font-bold">
+                    <div
+                      key="total"
+                      className="flex justify-between items-center text-lg font-bold"
+                    >
                       <span>Total</span>
                       <span className="font-mono">
                         ${totalPrice.toFixed(2)}
