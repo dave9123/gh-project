@@ -1,5 +1,6 @@
 import express from 'express';
 import orders from './api/orders';
+import enterprise from './api/enterprise';
 
 const app = express();
 
