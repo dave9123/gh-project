@@ -4,6 +4,7 @@
 		"migrations:push": "drizzle-kit push"
 	},
 	"dependencies": {
+		"@neondatabase/serverless": "^1.0.1",
 		"baileys": "^6.7.18",
 		"dotenv": "^17.2.0",
 		"drizzle-orm": "^0.44.3",
@@ -15,6 +16,7 @@
 		"@types/node": "^24.1.0",
 		"@types/pg": "^8.15.4",
 		"drizzle-kit": "^0.31.4",
-		"tsx": "^4.20.3"
+		"tsx": "^4.20.3",
+		"wrangler": "^4.26.0"
 	}
 }

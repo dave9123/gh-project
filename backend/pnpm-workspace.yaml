@@ -2,3 +2,5 @@ onlyBuiltDependencies:
   - baileys
   - esbuild
   - protobufjs
+  - sharp
+  - workerd
