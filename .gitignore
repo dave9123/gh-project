@@ -42,4 +42,5 @@ next-env.d.ts
 
 #backend
 backend/drizzle
+backend/auth
 dist
