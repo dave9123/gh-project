@@ -19,7 +19,7 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user, profile }) {
       const cookieStore = await cookies();
 
-      console.log("profile", profile, user);
+      //   console.log("profile", profile, user);
 
       if (!profile) {
         return false;
