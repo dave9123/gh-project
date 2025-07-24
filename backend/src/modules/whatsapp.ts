@@ -1,1 +1,0 @@
-import makeWASocket from "baileys";
