@@ -35,7 +35,6 @@ interface PricingRule {
     threshold: number;
     step_amount: number;
   };
-  unit?: string;
 }
 
 interface FixedOption {
@@ -62,9 +61,6 @@ export interface Parameter {
     parentParameter: string;
     showWhen: string[];
   };
-  hasSubParameters?: boolean;
-  subParameters?: Parameter[];
-  pricingScope?: "per_unit" | "per_quantity";
 }
 
 interface FormValues {
@@ -74,7 +70,7 @@ interface FormValues {
 export default function QuoteFormBuilder() {
   const [parameters, setParameters] = useState<Parameter[]>([]);
   const [activeTab, setActiveTab] = useState("builder");
-  const [formValues, setFormValues] = useState<FormValues>({ quantity: "1" });
+  const [formValues, setFormValues] = useState<FormValues>({});
   const [totalPrice, setTotalPrice] = useState(0);
   const [priceBreakdown, setPriceBreakdown] = useState<
     Array<{
@@ -92,92 +88,8 @@ export default function QuoteFormBuilder() {
       type: "NumericValue",
       required: false,
       pricing: {},
-      hasSubParameters: false,
-      pricingScope: "per_unit",
     };
     setParameters([...parameters, newParam]);
-  };
-
-  const addSubParameter = (parentId: string) => {
-    const newSubParam: Parameter = {
-      id: `subparam_${Date.now()}`,
-      name: "",
-      label: "",
-      type: "FixedOption",
-      required: false,
-      pricing: {},
-      options: [],
-      pricingScope: "per_unit",
-    };
-
-    setParameters(
-      parameters.map((param) => {
-        if (param.id === parentId) {
-          return {
-            ...param,
-            subParameters: [...(param.subParameters || []), newSubParam],
-          };
-        }
-        return param;
-      })
-    );
-  };
-
-  const updateSubParameter = (
-    parentId: string,
-    subId: string,
-    updates: Partial<Parameter>
-  ) => {
-    setParameters(
-      parameters.map((param) => {
-        if (param.id === parentId && param.subParameters) {
-          return {
-            ...param,
-            subParameters: param.subParameters.map((subParam) =>
-              subParam.id === subId ? { ...subParam, ...updates } : subParam
-            ),
-          };
-        }
-        return param;
-      })
-    );
-  };
-
-  const deleteSubParameter = (parentId: string, subId: string) => {
-    setParameters(
-      parameters.map((param) => {
-        if (param.id === parentId && param.subParameters) {
-          return {
-            ...param,
-            subParameters: param.subParameters.filter(
-              (subParam) => subParam.id !== subId
-            ),
-          };
-        }
-        return param;
-      })
-    );
-  };
-
-  const addQuantityParameter = () => {
-    // Check if quantity parameter already exists
-    const hasQuantity = parameters.some((p) => p.name === "quantity");
-    if (!hasQuantity) {
-      const quantityParam: Parameter = {
-        id: `param_quantity_${Date.now()}`,
-        name: "quantity",
-        label: "Quantity",
-        type: "NumericValue",
-        required: true,
-        min: 1,
-        step: 1,
-        unit: "units",
-        pricing: {}, // No pricing rules for quantity itself
-        hasSubParameters: false,
-        pricingScope: "per_unit",
-      };
-      setParameters([quantityParam, ...parameters]);
-    }
   };
 
   const updateParameter = (id: string, updates: Partial<Parameter>) => {
@@ -239,19 +151,14 @@ export default function QuoteFormBuilder() {
   };
 
   const calculatePrice = () => {
-    let unitTotal = 0;
+    let total = 0;
     const breakdown: Array<{
       parameter: string;
       description: string;
       amount: number;
     }> = [];
 
-    // Get quantity from form values, default to 1
-    const quantity = Number.parseFloat(formValues.quantity) || 1;
-
     const calculatedValues = { ...formValues };
-
-    // First, calculate all derived values
     parameters
       .filter(
         (p) => p.type === "DerivedCalc" && isParameterVisible(p, formValues)
@@ -273,12 +180,8 @@ export default function QuoteFormBuilder() {
         }
       });
 
-    // Calculate unit price for each parameter (excluding quantity)
     parameters
-      .filter(
-        (param) =>
-          isParameterVisible(param, formValues) && param.name !== "quantity"
-      )
+      .filter((param) => isParameterVisible(param, formValues))
       .forEach((param) => {
         const value = calculatedValues[param.name];
         if (value === undefined || value === null || value === "") return;
@@ -347,24 +250,14 @@ export default function QuoteFormBuilder() {
         if (paramTotal > 0) {
           breakdown.push({
             parameter: param.label || param.name,
-            description: `${description} (per unit)`,
+            description,
             amount: paramTotal,
           });
-          unitTotal += paramTotal;
+          total += paramTotal;
         }
       });
 
-    // Add quantity breakdown if quantity > 1
-    if (quantity > 1 && unitTotal > 0) {
-      breakdown.push({
-        parameter: "Quantity",
-        description: `${unitTotal.toFixed(2)} × ${quantity} units`,
-        amount: unitTotal * (quantity - 1), // Additional cost beyond the first unit
-      });
-    }
-
-    const finalTotal = unitTotal * quantity;
-    setTotalPrice(finalTotal);
+    setTotalPrice(total);
     setPriceBreakdown(breakdown);
   };
 
@@ -381,7 +274,7 @@ export default function QuoteFormBuilder() {
       printingSamples[sampleName as keyof typeof printingSamples];
     if (sampleFunction) {
       setParameters(sampleFunction());
-      setFormValues({ quantity: formValues.quantity || "1" }); // Preserve quantity when loading new sample
+      setFormValues({}); // Clear form values when loading new sample
     }
   };
 
@@ -391,8 +284,7 @@ export default function QuoteFormBuilder() {
         <h1 className="text-3xl font-bold mb-2">Quote Form Builder</h1>
         <p className="text-muted-foreground">
           Build dynamic pricing forms with FixedOption, NumericValue, and
-          DerivedCalc parameters. Total price is calculated as unit price ×
-          quantity.
+          DerivedCalc parameters
         </p>
       </div>
 
@@ -427,14 +319,6 @@ export default function QuoteFormBuilder() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                onClick={addQuantityParameter}
-                variant="outline"
-                className="flex items-center gap-2"
-              >
-                <Calculator className="w-4 h-4" />
-                Add Quantity
-              </Button>
               <Button
                 onClick={addParameter}
                 className="flex items-center gap-2"
@@ -810,312 +694,6 @@ export default function QuoteFormBuilder() {
                     )}
                   </div>
 
-                  {/* Sub-Parameters Section */}
-                  <div className="space-y-3">
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        id={`subparams-${param.id}`}
-                        checked={!!param.hasSubParameters}
-                        onCheckedChange={(checked) => {
-                          updateParameter(param.id, {
-                            hasSubParameters: checked,
-                          });
-                          if (!checked) {
-                            updateParameter(param.id, { subParameters: [] });
-                          }
-                        }}
-                      />
-                      <Label htmlFor={`subparams-${param.id}`}>
-                        Enable sub-parameters (like Material options)
-                      </Label>
-                    </div>
-
-                    {param.hasSubParameters && (
-                      <div className="border rounded-lg p-3 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <Label className="text-base font-medium">
-                            Sub-Parameters
-                          </Label>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => addSubParameter(param.id)}
-                            className="flex items-center gap-2"
-                          >
-                            <Plus className="w-3 h-3" />
-                            Add Sub-Parameter
-                          </Button>
-                        </div>
-
-                        {param.subParameters &&
-                          param.subParameters.length > 0 && (
-                            <div className="space-y-3">
-                              {param.subParameters.map((subParam) => (
-                                <div
-                                  key={subParam.id}
-                                  className="border rounded-lg p-3 bg-gray-50 space-y-3"
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-sm font-medium">
-                                      {subParam.label ||
-                                        subParam.name ||
-                                        "Sub-Parameter"}
-                                    </span>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() =>
-                                        deleteSubParameter(
-                                          param.id,
-                                          subParam.id
-                                        )
-                                      }
-                                      className="text-destructive hover:text-destructive h-6 w-6 p-0"
-                                    >
-                                      <Trash2 className="w-3 h-3" />
-                                    </Button>
-                                  </div>
-
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <Input
-                                      placeholder="Sub-parameter name"
-                                      value={subParam.name}
-                                      onChange={(e) =>
-                                        updateSubParameter(
-                                          param.id,
-                                          subParam.id,
-                                          { name: e.target.value }
-                                        )
-                                      }
-                                    />
-                                    <Input
-                                      placeholder="Display label"
-                                      value={subParam.label}
-                                      onChange={(e) =>
-                                        updateSubParameter(
-                                          param.id,
-                                          subParam.id,
-                                          { label: e.target.value }
-                                        )
-                                      }
-                                    />
-                                  </div>
-
-                                  <div className="grid grid-cols-2 gap-2">
-                                    <Select
-                                      value={
-                                        subParam.pricingScope || "per_unit"
-                                      }
-                                      onValueChange={(
-                                        value: "per_unit" | "per_quantity"
-                                      ) =>
-                                        updateSubParameter(
-                                          param.id,
-                                          subParam.id,
-                                          { pricingScope: value }
-                                        )
-                                      }
-                                    >
-                                      <SelectTrigger>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="per_unit">
-                                          Per Unit
-                                        </SelectItem>
-                                        <SelectItem value="per_quantity">
-                                          Per Quantity
-                                        </SelectItem>
-                                      </SelectContent>
-                                    </Select>
-
-                                    <div className="flex items-center space-x-2">
-                                      <Switch
-                                        id={`required-sub-${subParam.id}`}
-                                        checked={subParam.required}
-                                        onCheckedChange={(checked) =>
-                                          updateSubParameter(
-                                            param.id,
-                                            subParam.id,
-                                            { required: checked }
-                                          )
-                                        }
-                                      />
-                                      <Label
-                                        htmlFor={`required-sub-${subParam.id}`}
-                                        className="text-sm"
-                                      >
-                                        Required
-                                      </Label>
-                                    </div>
-                                  </div>
-
-                                  {/* Sub-parameter options */}
-                                  <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                      <Label className="text-sm">Options</Label>
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        onClick={() => {
-                                          const newOption: FixedOption = {
-                                            label: "",
-                                            value: "",
-                                            pricing: {},
-                                          };
-                                          updateSubParameter(
-                                            param.id,
-                                            subParam.id,
-                                            {
-                                              options: [
-                                                ...(subParam.options || []),
-                                                newOption,
-                                              ],
-                                            }
-                                          );
-                                        }}
-                                        className="h-6 text-xs"
-                                      >
-                                        Add Option
-                                      </Button>
-                                    </div>
-
-                                    {subParam.options?.map(
-                                      (option, optionIndex) => (
-                                        <div
-                                          key={optionIndex}
-                                          className="border rounded p-2 space-y-2 bg-white"
-                                        >
-                                          <div className="flex items-center justify-between">
-                                            <span className="text-xs font-medium">
-                                              Option {optionIndex + 1}
-                                            </span>
-                                            <Button
-                                              variant="ghost"
-                                              size="sm"
-                                              onClick={() => {
-                                                const newOptions =
-                                                  subParam.options?.filter(
-                                                    (_, i) => i !== optionIndex
-                                                  ) || [];
-                                                updateSubParameter(
-                                                  param.id,
-                                                  subParam.id,
-                                                  { options: newOptions }
-                                                );
-                                              }}
-                                              className="text-destructive hover:text-destructive h-4 w-4 p-0"
-                                            >
-                                              <Trash2 className="w-2 h-2" />
-                                            </Button>
-                                          </div>
-
-                                          <div className="grid grid-cols-2 gap-1">
-                                            <Input
-                                              placeholder="Label (e.g., PLA)"
-                                              value={option.label}
-                                              onChange={(e) => {
-                                                const newOptions = [
-                                                  ...(subParam.options || []),
-                                                ];
-                                                newOptions[optionIndex] = {
-                                                  ...option,
-                                                  label: e.target.value,
-                                                };
-                                                updateSubParameter(
-                                                  param.id,
-                                                  subParam.id,
-                                                  { options: newOptions }
-                                                );
-                                              }}
-                                              className="h-7 text-xs"
-                                            />
-                                            <Input
-                                              placeholder="Value (e.g., pla)"
-                                              value={option.value}
-                                              onChange={(e) => {
-                                                const newOptions = [
-                                                  ...(subParam.options || []),
-                                                ];
-                                                newOptions[optionIndex] = {
-                                                  ...option,
-                                                  value: e.target.value,
-                                                };
-                                                updateSubParameter(
-                                                  param.id,
-                                                  subParam.id,
-                                                  { options: newOptions }
-                                                );
-                                              }}
-                                              className="h-7 text-xs"
-                                            />
-                                          </div>
-
-                                          <div className="grid grid-cols-2 gap-1">
-                                            <Input
-                                              type="number"
-                                              step="0.01"
-                                              placeholder="Unit Price (e.g., 800)"
-                                              value={
-                                                option.pricing.unit_price || ""
-                                              }
-                                              onChange={(e) => {
-                                                const newOptions = [
-                                                  ...(subParam.options || []),
-                                                ];
-                                                newOptions[optionIndex] = {
-                                                  ...option,
-                                                  pricing: {
-                                                    ...option.pricing,
-                                                    unit_price:
-                                                      Number.parseFloat(
-                                                        e.target.value
-                                                      ) || undefined,
-                                                  },
-                                                };
-                                                updateSubParameter(
-                                                  param.id,
-                                                  subParam.id,
-                                                  { options: newOptions }
-                                                );
-                                              }}
-                                              className="h-7 text-xs"
-                                            />
-                                            <Input
-                                              placeholder="Unit (e.g., /gr)"
-                                              value={option.pricing.unit || ""}
-                                              onChange={(e) => {
-                                                const newOptions = [
-                                                  ...(subParam.options || []),
-                                                ];
-                                                newOptions[optionIndex] = {
-                                                  ...option,
-                                                  pricing: {
-                                                    ...option.pricing,
-                                                    unit: e.target.value,
-                                                  },
-                                                };
-                                                updateSubParameter(
-                                                  param.id,
-                                                  subParam.id,
-                                                  { options: newOptions }
-                                                );
-                                              }}
-                                              className="h-7 text-xs"
-                                            />
-                                          </div>
-                                        </div>
-                                      )
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                      </div>
-                    )}
-                  </div>
-
                   <Separator />
                   <div>
                     <Label className="text-base font-medium">
@@ -1348,29 +926,6 @@ export default function QuoteFormBuilder() {
                       </div>
                     ))}
                     <Separator />
-                    {(() => {
-                      const quantity =
-                        Number.parseFloat(formValues.quantity) || 1;
-                      const unitTotal = priceBreakdown
-                        .filter((item) => item.parameter !== "Quantity")
-                        .reduce((sum, item) => sum + item.amount, 0);
-
-                      return quantity > 1 ? (
-                        <>
-                          <div className="flex justify-between items-center text-base">
-                            <span>Subtotal (per unit)</span>
-                            <span className="font-mono">
-                              ${unitTotal.toFixed(2)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center text-base">
-                            <span>Quantity</span>
-                            <span className="font-mono">× {quantity}</span>
-                          </div>
-                          <Separator />
-                        </>
-                      ) : null;
-                    })()}
                     <div className="flex justify-between items-center text-lg font-bold">
                       <span>Total</span>
                       <span className="font-mono">
