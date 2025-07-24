@@ -6,6 +6,8 @@ export const businessCardsSample = (): Parameter[] => [
     id: "bc_material",
     name: "material",
     label: "Card Material",
+    description:
+      "Choose the paper stock for your business cards. Higher point values indicate thicker, more premium materials.",
     type: "FixedOption",
     required: true,
     pricing: { base_price: 5 }, // Setup fee
@@ -13,17 +15,74 @@ export const businessCardsSample = (): Parameter[] => [
       {
         label: "Standard (14pt)",
         value: "standard",
+        description: "Lightweight, cost-effective option for everyday use",
         pricing: { base_price: 0, multiplier: 1.0 },
+        subOptions: [
+          {
+            id: "matte_finish",
+            label: "Matte Finish",
+            value: "matte",
+            description: "Non-reflective finish that reduces fingerprints",
+            price: 2,
+            pricingScope: "per_qty",
+          },
+          {
+            id: "gloss_finish",
+            label: "Gloss Finish",
+            value: "gloss",
+            description: "Shiny finish that makes colors pop",
+            price: 3,
+            pricingScope: "per_qty",
+          },
+        ],
       },
       {
         label: "Premium (16pt)",
         value: "premium",
+        description: "Thicker stock with better feel and durability",
         pricing: { base_price: 15, multiplier: 1.3 },
+        subOptions: [
+          {
+            id: "spot_uv",
+            label: "Spot UV Coating",
+            value: "spot_uv",
+            description: "Adds selective glossy coating to specific areas",
+            price: 8,
+            pricingScope: "per_qty",
+          },
+          {
+            id: "embossing",
+            label: "Embossed Text",
+            value: "emboss",
+            description: "Raised text effect for premium look",
+            price: 12,
+            pricingScope: "per_qty",
+          },
+        ],
       },
       {
         label: "Luxury (18pt + UV)",
         value: "luxury",
+        description: "Premium thick stock with UV coating included",
         pricing: { base_price: 35, multiplier: 1.8 },
+        subOptions: [
+          {
+            id: "foil_stamping",
+            label: "Foil Stamping",
+            value: "foil",
+            description: "Metallic foil accents (gold or silver)",
+            price: 20,
+            pricingScope: "per_qty",
+          },
+          {
+            id: "die_cut",
+            label: "Custom Die Cut",
+            value: "die_cut",
+            description: "Custom shape cutting for unique cards",
+            price: 25,
+            pricingScope: "per_qty",
+          },
+        ],
       },
     ],
   },
