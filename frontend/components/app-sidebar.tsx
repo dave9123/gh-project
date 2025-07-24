@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import {
+  IconAlignBoxBottomRight,
   IconCamera,
   IconChartBar,
   IconDashboard,
@@ -66,7 +67,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               className="data-[slot=sidebar-menu-button]:!p-1.5"
             >
               <a href="#">
-                <IconInnerShadowTop className="!size-5" />
+                <IconAlignBoxBottomRight className="!size-5" />
                 <span className="text-base font-semibold">Enterprise E .</span>
               </a>
             </SidebarMenuButton>
