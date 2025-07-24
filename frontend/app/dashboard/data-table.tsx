@@ -105,12 +105,12 @@ export function DataTable<TData, TValue>({
         </TableHeader>
         <TableBody>
           {table.getRowModel().rows?.length ? (
-            table.getRowModel().rows.map((row) => {
+            table.getRowModel().rows.map((row, index) => {
               const isExpanded = expandedRows.has(row.id);
               return (
                 <>
                   <TableRow
-                    key={row.id}
+                    key={index}
                     data-state={row.getIsSelected() && "selected"}
                     className="cursor-pointer hover:bg-gray-50"
                     onClick={() => toggleRowExpansion(row.id)}
