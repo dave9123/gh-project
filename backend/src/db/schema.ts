@@ -20,6 +20,17 @@ export const productsTable = pgTable("products", {
     currencyType: varchar().default("IDR").notNull(),
 
     createdAt: timestamp().defaultNow().notNull(),
-    updatedAt: timestamp().defaultNow().notNull(),
-    lastUsed: timestamp().defaultNow().notNull()
+    lastModified: timestamp().defaultNow().notNull()
+});
+
+export const businessTable = pgTable("business", {
+    id: integer().primaryKey().generatedAlwaysAsIdentity(),
+    
+    name: varchar().notNull(),
+    slug: varchar().notNull(),
+    phoneNumber: varchar().notNull(),
+    ownerEmail: varchar().notNull(),
+
+    createdAt: timestamp().defaultNow().notNull(),
+    updatedAt: timestamp().defaultNow().notNull()
 });
