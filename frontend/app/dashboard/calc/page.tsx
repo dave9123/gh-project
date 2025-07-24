@@ -227,6 +227,112 @@ const extractFileMetadata = async (file: File): Promise<FileMetadata> => {
         metadata.vertices = vertices ? vertices.length : 0;
         metadata.faces = faces ? faces.length : 0;
         metadata.fileFormat = "Wavefront OBJ";
+
+        // Calculate volume and weight for OBJ files if we have face data
+        if (metadata.faces && metadata.faces > 0) {
+          try {
+            const volume = calculateOBJVolume(text);
+            if (volume > 0) {
+              metadata.volume = volume;
+              metadata.materialDensity = materialDensities["Generic"]; // Default to PLA
+              metadata.weightGrams = +calculateWeight(
+                metadata.volume,
+                metadata.materialDensity
+              ).toFixed(2);
+            }
+          } catch (error) {
+            console.warn("Could not calculate OBJ volume:", error);
+          }
+        }
+      } else if (fileExtension === "ply") {
+        // PLY file analysis
+        const text = new TextDecoder().decode(arrayBuffer);
+        metadata.fileFormat = "Stanford PLY";
+
+        // Extract vertex and face counts from PLY header
+        const vertexMatch = text.match(/element vertex (\d+)/);
+        const faceMatch = text.match(/element face (\d+)/);
+
+        if (vertexMatch) metadata.vertices = parseInt(vertexMatch[1]);
+        if (faceMatch) {
+          metadata.faces = parseInt(faceMatch[1]);
+          metadata.triangles = metadata.faces; // Most PLY faces are triangles
+        }
+
+        // Calculate volume and weight for PLY files
+        if (metadata.faces && metadata.faces > 0) {
+          try {
+            const volume = calculatePLYVolume(arrayBuffer);
+            if (volume > 0) {
+              metadata.volume = volume;
+              metadata.materialDensity = materialDensities["Generic"];
+              metadata.weightGrams = +calculateWeight(
+                metadata.volume,
+                metadata.materialDensity
+              ).toFixed(2);
+            }
+          } catch (error) {
+            console.warn("Could not calculate PLY volume:", error);
+          }
+        }
+      } else if (fileExtension === "3mf") {
+        // 3MF file analysis
+        metadata.fileFormat = "3D Manufacturing Format";
+
+        // 3MF files are ZIP archives containing XML - basic analysis
+        try {
+          // Estimate complexity based on file size (rough approximation)
+          const sizeKB = arrayBuffer.byteLength / 1024;
+          metadata.estimatedVertices = Math.floor(sizeKB * 100); // Rough estimate
+          metadata.faces = Math.floor(metadata.estimatedVertices / 3);
+
+          // For 3MF, we'll use a simplified volume estimation based on file size
+          // This is less accurate but provides some useful metadata
+          metadata.volume = Math.floor(sizeKB * 50); // Very rough estimate
+          metadata.materialDensity = materialDensities["Generic"];
+          metadata.weightGrams = +calculateWeight(
+            metadata.volume,
+            metadata.materialDensity
+          ).toFixed(2);
+        } catch (error) {
+          console.warn("Could not analyze 3MF file:", error);
+        }
+      } else if (fileExtension === "amf") {
+        // AMF file analysis
+        metadata.fileFormat = "Additive Manufacturing Format";
+
+        try {
+          const text = new TextDecoder().decode(arrayBuffer);
+
+          // AMF is XML-based, look for mesh information
+          const vertexMatches = text.match(/<vertex>/g);
+          const triangleMatches = text.match(/<triangle>/g);
+
+          if (vertexMatches) metadata.vertices = vertexMatches.length;
+          if (triangleMatches) {
+            metadata.triangles = triangleMatches.length;
+            metadata.faces = metadata.triangles;
+          }
+
+          // Calculate volume for AMF files if we have triangle data
+          if (metadata.triangles && metadata.triangles > 0) {
+            try {
+              const volume = calculateAMFVolume(text);
+              if (volume > 0) {
+                metadata.volume = volume;
+                metadata.materialDensity = materialDensities["Generic"];
+                metadata.weightGrams = +calculateWeight(
+                  metadata.volume,
+                  metadata.materialDensity
+                ).toFixed(2);
+              }
+            } catch (error) {
+              console.warn("Could not calculate AMF volume:", error);
+            }
+          }
+        } catch (error) {
+          console.warn("Could not analyze AMF file:", error);
+        }
       } else if (fileExtension === "gcode") {
         // G-code analysis
         const text = new TextDecoder().decode(arrayBuffer);
@@ -247,6 +353,21 @@ const extractFileMetadata = async (file: File): Promise<FileMetadata> => {
         const layerMatch = text.match(/;LAYER_HEIGHT:([\d.]+)/);
         if (layerMatch) {
           metadata.layerHeight = parseFloat(layerMatch[1]);
+        }
+
+        // Estimate volume from filament usage if available in G-code comments
+        const filamentMatch = text.match(/;Filament used: ([\d.]+)m/);
+        if (filamentMatch) {
+          const filamentLength = parseFloat(filamentMatch[1]) * 1000; // Convert to mm
+          const filamentDiameter = 1.75; // Standard 1.75mm filament
+          const filamentRadius = filamentDiameter / 2;
+          metadata.volume =
+            Math.PI * filamentRadius * filamentRadius * filamentLength;
+          metadata.materialDensity = materialDensities["Generic"];
+          metadata.weightGrams = +calculateWeight(
+            metadata.volume,
+            metadata.materialDensity
+          ).toFixed(2);
         }
       }
     } catch (error) {
@@ -398,6 +519,168 @@ const calculateBinarySTLVolume = (arrayBuffer: ArrayBuffer): number => {
         v2[0] * (v3[1] * v1[2] - v3[2] * v1[1]) +
         v3[0] * (v1[1] * v2[2] - v1[2] * v2[1])) /
       6;
+  }
+
+  return Math.abs(totalVolume);
+};
+
+// Calculate volume for OBJ files using face data
+const calculateOBJVolume = (objText: string): number => {
+  const lines = objText.split("\n");
+  const vertices: number[][] = [];
+  let totalVolume = 0;
+
+  // Parse vertices
+  for (const line of lines) {
+    if (line.startsWith("v ")) {
+      const parts = line.split(/\s+/);
+      if (parts.length >= 4) {
+        vertices.push([
+          parseFloat(parts[1]),
+          parseFloat(parts[2]),
+          parseFloat(parts[3]),
+        ]);
+      }
+    }
+  }
+
+  // Parse faces and calculate volume
+  for (const line of lines) {
+    if (line.startsWith("f ")) {
+      const parts = line.split(/\s+/).slice(1);
+      if (parts.length >= 3) {
+        // Handle face indices (OBJ uses 1-based indexing)
+        const indices = parts.map((part) => {
+          const vertexIndex = parseInt(part.split("/")[0]);
+          return vertexIndex > 0
+            ? vertexIndex - 1
+            : vertices.length + vertexIndex;
+        });
+
+        // Triangulate the face if it has more than 3 vertices
+        for (let i = 1; i < indices.length - 1; i++) {
+          const v1 = vertices[indices[0]];
+          const v2 = vertices[indices[i]];
+          const v3 = vertices[indices[i + 1]];
+
+          if (v1 && v2 && v3) {
+            // Calculate signed volume contribution
+            totalVolume +=
+              (v1[0] * (v2[1] * v3[2] - v2[2] * v3[1]) +
+                v2[0] * (v3[1] * v1[2] - v3[2] * v1[1]) +
+                v3[0] * (v1[1] * v2[2] - v1[2] * v2[1])) /
+              6;
+          }
+        }
+      }
+    }
+  }
+
+  return Math.abs(totalVolume);
+};
+
+// Calculate volume for PLY files
+const calculatePLYVolume = (arrayBuffer: ArrayBuffer): number => {
+  const text = new TextDecoder().decode(arrayBuffer);
+  const lines = text.split("\n");
+
+  let vertexCount = 0;
+  let faceCount = 0;
+  let headerEnded = false;
+  let currentVertex = 0;
+  let currentFace = 0;
+
+  const vertices: number[][] = [];
+  let totalVolume = 0;
+
+  // Parse header to get counts
+  for (const line of lines) {
+    if (line.includes("element vertex")) {
+      vertexCount = parseInt(line.split(" ")[2]);
+    } else if (line.includes("element face")) {
+      faceCount = parseInt(line.split(" ")[2]);
+    } else if (line.includes("end_header")) {
+      headerEnded = true;
+      continue;
+    }
+
+    if (!headerEnded) continue;
+
+    // Parse vertices
+    if (currentVertex < vertexCount) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 3) {
+        vertices.push([
+          parseFloat(parts[0]),
+          parseFloat(parts[1]),
+          parseFloat(parts[2]),
+        ]);
+      }
+      currentVertex++;
+    }
+    // Parse faces
+    else if (currentFace < faceCount) {
+      const parts = line.trim().split(/\s+/);
+      if (parts.length >= 4) {
+        const numVertices = parseInt(parts[0]);
+        if (numVertices >= 3) {
+          // Triangulate if more than 3 vertices
+          for (let i = 1; i < numVertices - 1; i++) {
+            const v1 = vertices[parseInt(parts[1])];
+            const v2 = vertices[parseInt(parts[i + 1])];
+            const v3 = vertices[parseInt(parts[i + 2])];
+
+            if (v1 && v2 && v3) {
+              totalVolume +=
+                (v1[0] * (v2[1] * v3[2] - v2[2] * v3[1]) +
+                  v2[0] * (v3[1] * v1[2] - v3[2] * v1[1]) +
+                  v3[0] * (v1[1] * v2[2] - v1[2] * v2[1])) /
+                6;
+            }
+          }
+        }
+      }
+      currentFace++;
+    }
+  }
+
+  return Math.abs(totalVolume);
+};
+
+// Calculate volume for AMF files (XML-based)
+const calculateAMFVolume = (amfText: string): number => {
+  const vertices: number[][] = [];
+  let totalVolume = 0;
+
+  // Extract vertices from XML
+  const vertexRegex =
+    /<vertex>\s*<coordinates>\s*<x>([\d.-]+)<\/x>\s*<y>([\d.-]+)<\/y>\s*<z>([\d.-]+)<\/z>\s*<\/coordinates>\s*<\/vertex>/g;
+  let match;
+
+  while ((match = vertexRegex.exec(amfText)) !== null) {
+    vertices.push([
+      parseFloat(match[1]),
+      parseFloat(match[2]),
+      parseFloat(match[3]),
+    ]);
+  }
+
+  // Extract triangles and calculate volume
+  const triangleRegex =
+    /<triangle>\s*<v1>(\d+)<\/v1>\s*<v2>(\d+)<\/v2>\s*<v3>(\d+)<\/v3>\s*<\/triangle>/g;
+
+  while ((match = triangleRegex.exec(amfText)) !== null) {
+    const v1 = vertices[parseInt(match[1])];
+    const v2 = vertices[parseInt(match[2])];
+    const v3 = vertices[parseInt(match[3])];
+
+    if (v1 && v2 && v3) {
+      totalVolume +=
+        (v1[0] * (v2[1] * v3[2] - v2[2] * v3[1]) +
+          v2[0] * (v3[1] * v1[2] - v3[2] * v1[1]) +
+          v3[0] * (v1[1] * v2[2] - v1[2] * v2[1])) /
+        6;
+    }
   }
 
   return Math.abs(totalVolume);
@@ -1086,7 +1369,7 @@ export default function QuoteFormBuilder() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-2">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="builder" className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
             Form Builder
@@ -1094,6 +1377,10 @@ export default function QuoteFormBuilder() {
           <TabsTrigger value="preview" className="flex items-center gap-2">
             <Eye className="w-4 h-4" />
             Preview & Test
+          </TabsTrigger>
+          <TabsTrigger value="connections" className="flex items-center gap-2">
+            <Link className="w-4 h-4" />
+            File Connections
           </TabsTrigger>
         </TabsList>
 
@@ -1869,9 +2156,15 @@ export default function QuoteFormBuilder() {
 
                         {param.type === "FixedOption" && (
                           <Select
-                            value={formValues[param.name] || ""}
+                            value={
+                              formValues[param.name] === ""
+                                ? "__none__"
+                                : formValues[param.name] || "__none__"
+                            }
                             onValueChange={(value) => {
-                              updateFormValue(param.name, value);
+                              const actualValue =
+                                value === "__none__" ? "" : value;
+                              updateFormValue(param.name, actualValue);
                               const dependentParams = parameters.filter(
                                 (p) =>
                                   p.conditional?.parentParameter === param.name
@@ -1899,6 +2192,13 @@ export default function QuoteFormBuilder() {
                               />
                             </SelectTrigger>
                             <SelectContent>
+                              {!param.required && (
+                                <SelectItem value="__none__">
+                                  <span className="text-muted-foreground italic">
+                                    None (clear selection)
+                                  </span>
+                                </SelectItem>
+                              )}
                               {param.options && param.options.length > 0 ? (
                                 param.options
                                   .filter(
@@ -2601,6 +2901,360 @@ export default function QuoteFormBuilder() {
                   <div className="text-center text-muted-foreground py-8">
                     Fill out the form to see price calculation
                   </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="connections" className="space-y-6">
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Link className="w-5 h-5" />
+                  File Metadata Connections
+                </CardTitle>
+                <CardDescription>
+                  Configure how file metadata is automatically mapped to form
+                  parameters
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-base font-medium">
+                      File Type Selection
+                    </Label>
+                    <div className="text-sm text-muted-foreground">
+                      Choose the type of files to upload
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      {
+                        value: "pdf",
+                        label: "PDF Documents",
+                        desc: "Extract page count",
+                      },
+                      {
+                        value: "images",
+                        label: "Images",
+                        desc: "Extract dimensions, file size",
+                      },
+                      {
+                        value: "3d",
+                        label: "3D Files",
+                        desc: "Extract volume, weight, file analysis",
+                      },
+                      {
+                        value: "documents",
+                        label: "Documents",
+                        desc: "Extract basic file metadata",
+                      },
+                    ].map((fileType) => (
+                      <div
+                        key={fileType.value}
+                        className={`border rounded-lg p-3 cursor-pointer transition-all ${
+                          selectedFileType === fileType.value
+                            ? "border-primary bg-primary/5 ring-2 ring-primary/20"
+                            : "border-border hover:border-primary/50"
+                        }`}
+                        onClick={() => selectFileType(fileType.value)}
+                      >
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="radio"
+                            id={`filetype-${fileType.value}`}
+                            name="fileType"
+                            value={fileType.value}
+                            checked={selectedFileType === fileType.value}
+                            onChange={() => selectFileType(fileType.value)}
+                            className="w-4 h-4"
+                          />
+                          <div>
+                            <Label
+                              htmlFor={`filetype-${fileType.value}`}
+                              className="font-medium cursor-pointer"
+                            >
+                              {fileType.label}
+                            </Label>
+                            <div className="text-xs text-muted-foreground">
+                              {fileType.desc}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-base font-medium">File Upload</Label>
+                    {uploadedFile && (
+                      <Badge variant="outline" className="text-green-600">
+                        {uploadedFile.name}
+                      </Badge>
+                    )}
+                  </div>
+                  <Input
+                    type="file"
+                    accept={getFileAcceptString()}
+                    onChange={handleFileUpload}
+                    className="file:mr-4  file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
+                  />
+                  <div className="text-sm text-muted-foreground">
+                    Accepted files:{" "}
+                    {getFileAcceptString() || "Select a file type first"}
+                  </div>
+                </div>
+
+                {fileMetadata && (
+                  <>
+                    <Separator />
+                    <div className="space-y-3">
+                      <Label className="text-base font-medium">
+                        Extracted Metadata
+                      </Label>
+                      <div className="bg-muted/50 rounded-lg p-4 space-y-2">
+                        {Object.entries(fileMetadata).map(([key, value]) => (
+                          <div
+                            key={key}
+                            className="flex justify-between items-center text-sm"
+                          >
+                            <span className="font-medium text-muted-foreground capitalize">
+                              {key.replace(/([A-Z])/g, " $1").toLowerCase()}:
+                            </span>
+                            <span className="font-mono">
+                              {typeof value === "number"
+                                ? value.toLocaleString()
+                                : String(value)}
+                              {key === "weightGrams" && " g"}
+                              {key === "volume" && " mm³"}
+                              {key === "fileSize" && " bytes"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <Separator />
+
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-base font-medium">
+                      Metadata Connections
+                    </Label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={addFileConnection}
+                      disabled={!fileMetadata}
+                      className="flex items-center gap-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Connection
+                    </Button>
+                  </div>
+
+                  {fileConnections.length === 0 ? (
+                    <div className="text-center py-8 text-muted-foreground">
+                      <Upload className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                      <p>No metadata connections configured</p>
+                      <p className="text-sm">
+                        Upload a file and add connections to link metadata to
+                        form parameters
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {fileConnections.map((connection) => (
+                        <Card key={connection.id} className="p-4">
+                          <div className="space-y-3">
+                            <div className="flex items-center justify-between">
+                              <Label className="text-sm font-medium">
+                                Connection{" "}
+                                {fileConnections.indexOf(connection) + 1}
+                              </Label>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() =>
+                                  deleteFileConnection(connection.id)
+                                }
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <Label className="text-xs">
+                                  Metadata Field
+                                </Label>
+                                <Select
+                                  value={connection.metadataKey}
+                                  onValueChange={(value) =>
+                                    updateFileConnection(connection.id, {
+                                      metadataKey: value,
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger className="h-8">
+                                    <SelectValue placeholder="Select metadata" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {fileMetadata &&
+                                      Object.keys(fileMetadata).map((key) => (
+                                        <SelectItem key={key} value={key}>
+                                          <div className="flex items-center justify-between w-full">
+                                            <span className="capitalize">
+                                              {key
+                                                .replace(/([A-Z])/g, " $1")
+                                                .toLowerCase()}
+                                            </span>
+                                            <span className="text-xs text-muted-foreground ml-2">
+                                              {typeof fileMetadata[key] ===
+                                              "number"
+                                                ? fileMetadata[
+                                                    key
+                                                  ].toLocaleString()
+                                                : String(fileMetadata[key])}
+                                            </span>
+                                          </div>
+                                        </SelectItem>
+                                      ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              <div>
+                                <Label className="text-xs">
+                                  Form Parameter
+                                </Label>
+                                <Select
+                                  value={connection.parameterName}
+                                  onValueChange={(value) =>
+                                    updateFileConnection(connection.id, {
+                                      parameterName: value,
+                                    })
+                                  }
+                                >
+                                  <SelectTrigger className="h-8">
+                                    <SelectValue placeholder="Select parameter" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {parameters
+                                      .filter(
+                                        (param) =>
+                                          param.type === "NumericValue" &&
+                                          param.name
+                                      )
+                                      .map((param) => (
+                                        <SelectItem
+                                          key={param.id}
+                                          value={param.name}
+                                        >
+                                          {param.label || param.name}
+                                          {param.unit && ` (${param.unit})`}
+                                        </SelectItem>
+                                      ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+
+                            <div>
+                              <Label className="text-xs">Description</Label>
+                              <Input
+                                value={connection.description}
+                                onChange={(e) =>
+                                  updateFileConnection(connection.id, {
+                                    description: e.target.value,
+                                  })
+                                }
+                                placeholder="Describe this connection..."
+                                className="h-8"
+                              />
+                            </div>
+
+                            <div className="flex items-center justify-between pt-2">
+                              <div className="text-xs text-muted-foreground">
+                                {connection.metadataKey &&
+                                connection.parameterName &&
+                                fileMetadata ? (
+                                  <>
+                                    Maps{" "}
+                                    <strong>{connection.metadataKey}</strong> (
+                                    {fileMetadata[connection.metadataKey]}) →{" "}
+                                    <strong>{connection.parameterName}</strong>
+                                  </>
+                                ) : (
+                                  "Configure metadata field and parameter to create mapping"
+                                )}
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => applyFileConnection(connection)}
+                                disabled={
+                                  !connection.metadataKey ||
+                                  !connection.parameterName ||
+                                  !fileMetadata
+                                }
+                                className="h-8 text-xs"
+                              >
+                                Apply Now
+                              </Button>
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {fileConnections.length > 0 && fileMetadata && (
+                  <>
+                    <Separator />
+                    <div className="space-y-3">
+                      <Label className="text-base font-medium">
+                        Quick Actions
+                      </Label>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            fileConnections.forEach((connection) => {
+                              applyFileConnection(connection);
+                            });
+                          }}
+                          disabled={fileConnections.length === 0}
+                          className="flex items-center gap-2"
+                        >
+                          <Link className="w-4 h-4" />
+                          Apply All Connections
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => {
+                            setFileConnections([]);
+                          }}
+                          disabled={fileConnections.length === 0}
+                          className="flex items-center gap-2"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Clear All Connections
+                        </Button>
+                      </div>
+                    </div>
+                  </>
                 )}
               </CardContent>
             </Card>
