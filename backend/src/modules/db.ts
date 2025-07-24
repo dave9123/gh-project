@@ -1,7 +1,13 @@
-import { drizzle } from 'drizzle-orm/node-postgres';
+//import { drizzle } from 'drizzle-orm/node-postgres';
+import { drizzle } from 'drizzle-orm/d1';
 
 const db = drizzle({
     connection: {
+        accountId: process.env.CLOUDFLARE_ACCOUNT_ID!,
+        databaseId: process.env.CLOUDFLARE_DATABASE_ID!,
+        token: process.env.CLOUDFLARE_D1_TOKEN!,
+    }
+    /*connection: {
         user: process.env.DATABASE_USER!,
         host: process.env.DATABASE_HOST!,
         database: process.env.DATABASE_NAME!,
@@ -12,7 +18,7 @@ const db = drizzle({
                 ? { rejectUnauthorized: true }
                 : { rejectUnauthorized: false }
             : false,
-    },
+    },*/
 });
 
 export default db;
