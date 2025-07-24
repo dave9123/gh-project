@@ -1,6 +1,6 @@
 import express from "express";
 import db from "../../modules/db";
-import { usersTable } from "../../../db/schema";
+import { productsTable, usersTable } from "../../db/schema";
 const router = express.Router();
 
 router.post("/create", (req, res) => {
@@ -8,11 +8,10 @@ router.post("/create", (req, res) => {
   if (!name || !slugName || !phoneNumber || !ownerEmail) {
     return res.status(400).json({ error: "All fields are required" });
   }
-  /*
-    db.insert(usersTable).values({
-    })
-  */
 
+  // db.insert(usersTable).values({
+
+  // })
 
   res.send({
     generatedId: "",
@@ -34,17 +33,25 @@ router.get("/get", (req, res) => {
 });
 
 router.post("/product", (req, res) => {
-  const { name, description, basePrice, currencyType, owner } = req.body;
-  if (!name || !description || !basePrice || !currencyType || !owner) {
-    return res.status(400).json({ error: "All fields are required" });
-  }
+  if (!req.body?.name || !req.body?.description || !req.body?.basePrice || !req.body?.currencyType) return res.status(400).json({ error: "All fields are required" });
+  const { name, description, basePrice, currencyType } = req.body;
 
-  res.send({
-    generatedId: "UniqueID Generated from Backend",
-    name: "Product Name",
-    description: "product description",
-    currencyType: "IDR",
-    basePrice: 0,
+  db.insert(productsTable).values({
+    name,
+    description,
+    basePrice,
+    currencyType,
+  }).then((result => {
+    res.send({
+      generatedId: result.oid,
+      name,
+      description,
+      currencyType,
+      basePrice,
+    });
+  })).catch((err) => {
+    console.error(err);
+    return res.status(500).json({ error: "Failed to create product" });
   });
 });
 
@@ -54,6 +61,12 @@ router.delete("/product/:productId", (req, res) => {
 
 router.get("/product/:productId", (req, res) => {
   const { productId } = req.params;
+});
+
+router.get("/product", async (req, res) => {
+  if (process.env.NODE_ENV === "production") return res.status(403).json({ error: "Forbidden" }); 
+  const products = await db.select().from(productsTable);
+  res.send(products);
 });
 
 router.post("/parameter", (req, res) => {

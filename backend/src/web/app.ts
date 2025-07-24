@@ -7,11 +7,13 @@ import orders from "./api/orders";
 
 const app = express();
 
+app.use(express.json());
+
 app.use("/api/orders", orders);
 app.use("/api/auth", auth);
 app.use("/api/enterprise", enterprise);
 app.use("/api/files", files);
-app.get("/", (req, res) => res.send("howdy"));
+app.get("/", (_, res) => res.send("howdy"));
 
 const PORT = process.env.PORT || 3000
 app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
