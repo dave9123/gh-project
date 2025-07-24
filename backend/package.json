@@ -9,6 +9,7 @@
 		"dotenv": "^17.2.0",
 		"drizzle-orm": "^0.44.3",
 		"express": "^5.1.0",
+		"helmet": "^8.1.0",
 		"pg": "^8.16.3"
 	},
 	"devDependencies": {

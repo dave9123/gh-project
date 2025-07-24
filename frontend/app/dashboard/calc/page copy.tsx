@@ -61,35 +61,16 @@ export interface Parameter {
     parentParameter: string;
     showWhen: string[];
   };
-  hasSubParameters?: boolean;
-  subParameters?: Parameter[];
-  pricingScope?: "per_unit" | "per_quantity";
 }
 
 interface FormValues {
   [key: string]: any;
 }
 
-// Safe expression evaluator for basic math operations
-const evaluateExpression = (expression: string): number => {
-  try {
-    // Remove any non-mathematical characters for safety
-    const sanitized = expression.replace(/[^0-9+\-*/().\s]/g, "");
-
-    // Use Function constructor instead of eval for better safety
-    const func = new Function("return " + sanitized);
-    const result = func();
-
-    return typeof result === "number" && !isNaN(result) ? result : 0;
-  } catch (e) {
-    return 0;
-  }
-};
-
 export default function QuoteFormBuilder() {
   const [parameters, setParameters] = useState<Parameter[]>([]);
   const [activeTab, setActiveTab] = useState("builder");
-  const [formValues, setFormValues] = useState<FormValues>({ quantity: "1" });
+  const [formValues, setFormValues] = useState<FormValues>({});
   const [totalPrice, setTotalPrice] = useState(0);
   const [priceBreakdown, setPriceBreakdown] = useState<
     Array<{
@@ -107,92 +88,8 @@ export default function QuoteFormBuilder() {
       type: "NumericValue",
       required: false,
       pricing: {},
-      hasSubParameters: false,
-      pricingScope: "per_unit",
     };
     setParameters([...parameters, newParam]);
-  };
-
-  const addSubParameter = (parentId: string) => {
-    const newSubParam: Parameter = {
-      id: `subparam_${Date.now()}`,
-      name: "",
-      label: "",
-      type: "FixedOption",
-      required: false,
-      pricing: {},
-      options: [],
-      pricingScope: "per_unit",
-    };
-
-    setParameters(
-      parameters.map((param) => {
-        if (param.id === parentId) {
-          return {
-            ...param,
-            subParameters: [...(param.subParameters || []), newSubParam],
-          };
-        }
-        return param;
-      })
-    );
-  };
-
-  const updateSubParameter = (
-    parentId: string,
-    subId: string,
-    updates: Partial<Parameter>
-  ) => {
-    setParameters(
-      parameters.map((param) => {
-        if (param.id === parentId && param.subParameters) {
-          return {
-            ...param,
-            subParameters: param.subParameters.map((subParam) =>
-              subParam.id === subId ? { ...subParam, ...updates } : subParam
-            ),
-          };
-        }
-        return param;
-      })
-    );
-  };
-
-  const deleteSubParameter = (parentId: string, subId: string) => {
-    setParameters(
-      parameters.map((param) => {
-        if (param.id === parentId && param.subParameters) {
-          return {
-            ...param,
-            subParameters: param.subParameters.filter(
-              (subParam) => subParam.id !== subId
-            ),
-          };
-        }
-        return param;
-      })
-    );
-  };
-
-  const addQuantityParameter = () => {
-    // Check if quantity parameter already exists
-    const hasQuantity = parameters.some((p) => p.name === "quantity");
-    if (!hasQuantity) {
-      const quantityParam: Parameter = {
-        id: `param_quantity_${Date.now()}`,
-        name: "quantity",
-        label: "Quantity",
-        type: "NumericValue",
-        required: true,
-        min: 1,
-        step: 1,
-        unit: "units",
-        pricing: {}, // No pricing rules for quantity itself
-        hasSubParameters: false,
-        pricingScope: "per_unit",
-      };
-      setParameters([quantityParam, ...parameters]);
-    }
   };
 
   const updateParameter = (id: string, updates: Partial<Parameter>) => {
@@ -254,19 +151,14 @@ export default function QuoteFormBuilder() {
   };
 
   const calculatePrice = () => {
-    let unitTotal = 0;
+    let total = 0;
     const breakdown: Array<{
       parameter: string;
       description: string;
       amount: number;
     }> = [];
 
-    // Get quantity from form values, default to 1
-    const quantity = Number.parseFloat(formValues.quantity) || 1;
-
     const calculatedValues = { ...formValues };
-
-    // Calculate all derived values using current form values
     parameters
       .filter(
         (p) => p.type === "DerivedCalc" && isParameterVisible(p, formValues)
@@ -276,27 +168,20 @@ export default function QuoteFormBuilder() {
           try {
             let formula = param.formula;
             param.dependencies.forEach((dep) => {
-              const value = Number.parseFloat(calculatedValues[dep]) || 0;
-              formula = formula.replace(
-                new RegExp(`\\b${dep}\\b`, "g"),
-                value.toString()
-              );
+              const value = calculatedValues[dep] || 0;
+              formula = formula.replace(new RegExp(dep, "g"), value.toString());
             });
-            // Simple math expression evaluator (safer than eval)
-            const result = evaluateExpression(formula);
-            calculatedValues[param.name] = result;
+            calculatedValues[param.name] = eval(
+              formula.replace(/[^0-9+\-*/().\s]/g, "")
+            );
           } catch (e) {
             calculatedValues[param.name] = 0;
           }
         }
       });
 
-    // Calculate unit price for each parameter (excluding quantity)
     parameters
-      .filter(
-        (param) =>
-          isParameterVisible(param, formValues) && param.name !== "quantity"
-      )
+      .filter((param) => isParameterVisible(param, formValues))
       .forEach((param) => {
         const value = calculatedValues[param.name];
         if (value === undefined || value === null || value === "") return;
@@ -365,112 +250,23 @@ export default function QuoteFormBuilder() {
         if (paramTotal > 0) {
           breakdown.push({
             parameter: param.label || param.name,
-            description: `${description} (per unit)`,
+            description,
             amount: paramTotal,
           });
-          unitTotal += paramTotal;
+          total += paramTotal;
         }
       });
 
-    // Add quantity breakdown if quantity > 1
-    if (quantity > 1 && unitTotal > 0) {
-      breakdown.push({
-        parameter: "Quantity",
-        description: `${unitTotal.toFixed(2)} × ${quantity} units`,
-        amount: unitTotal * (quantity - 1), // Additional cost beyond the first unit
-      });
-    }
-
-    const finalTotal = unitTotal * quantity;
-    setTotalPrice(finalTotal);
+    setTotalPrice(total);
     setPriceBreakdown(breakdown);
   };
-
-  // Initialize derived calculations
-  const initializeDerivedCalcs = () => {
-    setFormValues((prev) => {
-      const newValues = { ...prev };
-
-      parameters
-        .filter((p) => p.type === "DerivedCalc")
-        .forEach((param) => {
-          if (param.formula && param.dependencies) {
-            try {
-              let formula = param.formula;
-              param.dependencies.forEach((dep) => {
-                const depValue = Number.parseFloat(newValues[dep]) || 0;
-                formula = formula.replace(
-                  new RegExp(`\\b${dep}\\b`, "g"),
-                  depValue.toString()
-                );
-              });
-              const result = evaluateExpression(formula);
-              newValues[param.name] = result;
-            } catch (e) {
-              newValues[param.name] = 0;
-            }
-          }
-        });
-
-      return newValues;
-    });
-  };
-
-  // Run initialization when parameters change
-  useEffect(() => {
-    initializeDerivedCalcs();
-  }, [parameters]);
 
   useEffect(() => {
     calculatePrice();
   }, [formValues, parameters]);
 
   const updateFormValue = (name: string, value: any) => {
-    setFormValues((prev) => {
-      const newValues = { ...prev, [name]: value };
-
-      // Immediately calculate any derived values that depend on this parameter
-      parameters
-        .filter(
-          (p) => p.type === "DerivedCalc" && p.dependencies?.includes(name)
-        )
-        .forEach((param) => {
-          if (param.formula && param.dependencies) {
-            try {
-              let formula = param.formula;
-              let hasAllDependencies = true;
-
-              param.dependencies.forEach((dep) => {
-                const depValue =
-                  dep === name
-                    ? Number.parseFloat(value) || 0
-                    : Number.parseFloat(newValues[dep]);
-
-                if (isNaN(depValue)) {
-                  hasAllDependencies = false;
-                  return;
-                }
-
-                formula = formula.replace(
-                  new RegExp(`\\b${dep}\\b`, "g"),
-                  depValue.toString()
-                );
-              });
-
-              if (hasAllDependencies) {
-                const result = evaluateExpression(formula);
-                newValues[param.name] = result;
-              } else {
-                newValues[param.name] = 0;
-              }
-            } catch (e) {
-              newValues[param.name] = 0;
-            }
-          }
-        });
-
-      return newValues;
-    });
+    setFormValues((prev) => ({ ...prev, [name]: value }));
   };
 
   const loadSample = (sampleName: string) => {
@@ -478,7 +274,7 @@ export default function QuoteFormBuilder() {
       printingSamples[sampleName as keyof typeof printingSamples];
     if (sampleFunction) {
       setParameters(sampleFunction());
-      setFormValues({ quantity: formValues.quantity || "1" }); // Preserve quantity when loading new sample
+      setFormValues({}); // Clear form values when loading new sample
     }
   };
 
@@ -488,8 +284,7 @@ export default function QuoteFormBuilder() {
         <h1 className="text-3xl font-bold mb-2">Quote Form Builder</h1>
         <p className="text-muted-foreground">
           Build dynamic pricing forms with FixedOption, NumericValue, and
-          DerivedCalc parameters. Total price is calculated as unit price ×
-          quantity.
+          DerivedCalc parameters
         </p>
       </div>
 
@@ -524,14 +319,6 @@ export default function QuoteFormBuilder() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                onClick={addQuantityParameter}
-                variant="outline"
-                className="flex items-center gap-2"
-              >
-                <Calculator className="w-4 h-4" />
-                Add Quantity
-              </Button>
               <Button
                 onClick={addParameter}
                 className="flex items-center gap-2"
@@ -773,60 +560,21 @@ export default function QuoteFormBuilder() {
                           updateParameter(param.id, { formula: e.target.value })
                         }
                       />
-                      <Label>Dependencies</Label>
-                      <div className="space-y-2">
-                        <div className="text-sm text-muted-foreground">
-                          Select the numeric parameters this calculation depends
-                          on:
-                        </div>
-                        <div className="space-y-2 max-h-32 overflow-y-auto border rounded-lg p-2">
-                          {parameters
-                            .filter(
-                              (p) =>
-                                p.id !== param.id &&
-                                (p.type === "NumericValue" ||
-                                  p.name === "quantity")
-                            )
-                            .map((p) => (
-                              <div
-                                key={p.id}
-                                className="flex items-center space-x-2"
-                              >
-                                <input
-                                  type="checkbox"
-                                  id={`dep-${param.id}-${p.id}`}
-                                  checked={
-                                    param.dependencies?.includes(p.name) ||
-                                    false
-                                  }
-                                  onChange={(e) => {
-                                    const currentDeps =
-                                      param.dependencies || [];
-                                    const newDeps = e.target.checked
-                                      ? [...currentDeps, p.name]
-                                      : currentDeps.filter(
-                                          (dep) => dep !== p.name
-                                        );
-
-                                    updateParameter(param.id, {
-                                      dependencies: newDeps,
-                                    });
-                                  }}
-                                  className="rounded"
-                                />
-                                <Label htmlFor={`dep-${param.id}-${p.id}`}>
-                                  {p.label || p.name} {p.unit && `(${p.unit})`}
-                                </Label>
-                              </div>
-                            ))}
-                        </div>
-                        {param.dependencies &&
-                          param.dependencies.length > 0 && (
-                            <div className="text-sm text-muted-foreground">
-                              Selected: {param.dependencies.join(", ")}
-                            </div>
-                          )}
-                      </div>
+                      <Label>
+                        Dependencies (comma-separated parameter names)
+                      </Label>
+                      <Input
+                        placeholder="e.g., length, width"
+                        value={param.dependencies?.join(", ") || ""}
+                        onChange={(e) =>
+                          updateParameter(param.id, {
+                            dependencies: e.target.value
+                              .split(",")
+                              .map((s) => s.trim())
+                              .filter(Boolean),
+                          })
+                        }
+                      />
                     </div>
                   )}
 
@@ -1139,29 +887,12 @@ export default function QuoteFormBuilder() {
                       )}
 
                       {param.type === "DerivedCalc" && (
-                        <div className="space-y-2">
-                          <Input
-                            id={`form-${param.id}`}
-                            value={
-                              typeof formValues[param.name] === "number"
-                                ? formValues[param.name].toFixed(2)
-                                : formValues[param.name] || "0.00"
-                            }
-                            disabled
-                            className="bg-muted font-mono"
-                          />
-                          {param.formula && (
-                            <div className="text-xs text-muted-foreground">
-                              Formula: {param.formula}
-                            </div>
-                          )}
-                          {param.dependencies &&
-                            param.dependencies.length > 0 && (
-                              <div className="text-xs text-muted-foreground">
-                                Depends on: {param.dependencies.join(", ")}
-                              </div>
-                            )}
-                        </div>
+                        <Input
+                          id={`form-${param.id}`}
+                          value={formValues[param.name] || 0}
+                          disabled
+                          className="bg-muted"
+                        />
                       )}
                     </div>
                   ))}
@@ -1195,29 +926,6 @@ export default function QuoteFormBuilder() {
                       </div>
                     ))}
                     <Separator />
-                    {(() => {
-                      const quantity =
-                        Number.parseFloat(formValues.quantity) || 1;
-                      const unitTotal = priceBreakdown
-                        .filter((item) => item.parameter !== "Quantity")
-                        .reduce((sum, item) => sum + item.amount, 0);
-
-                      return quantity > 1 ? (
-                        <>
-                          <div className="flex justify-between items-center text-base">
-                            <span>Subtotal (per unit)</span>
-                            <span className="font-mono">
-                              ${unitTotal.toFixed(2)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center text-base">
-                            <span>Quantity</span>
-                            <span className="font-mono">× {quantity}</span>
-                          </div>
-                          <Separator />
-                        </>
-                      ) : null;
-                    })()}
                     <div className="flex justify-between items-center text-lg font-bold">
                       <span>Total</span>
                       <span className="font-mono">
