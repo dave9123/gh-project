@@ -32,6 +32,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useScreenSize } from "@/lib/useScreenSize";
 
 const data = {
   user: {
@@ -42,13 +43,19 @@ const data = {
   navMain: [
     {
       title: "Dashboard",
-      url: "#",
+      url: "/",
       icon: IconDashboard,
     },
   ],
 };
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const screenSize = useScreenSize();
+
+  if (screenSize.greaterThan("md")) {
+    return <></>;
+  }
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -60,7 +67,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             >
               <a href="#">
                 <IconInnerShadowTop className="!size-5" />
-                <span className="text-base font-semibold">Acme sInc.</span>
+                <span className="text-base font-semibold">Enterprise E .</span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
