@@ -56,4 +56,11 @@ router.get("/product/:productId", (req, res) => {
   const { productId } = req.params;
 });
 
+router.post("/paramater/create", (req, res) => {
+  const { productId, name, ratioType, ratioToPrice } = req.body;
+  if (!productId || !name || !ratioType || !ratioToPrice) {
+    return res.status(400).json({ error: "All fields are required" });
+  }
+});
+
 export default router;
