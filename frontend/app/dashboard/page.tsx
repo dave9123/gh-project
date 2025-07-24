@@ -1,71 +1,69 @@
+"use client";
+
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useState, useRef, useEffect } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogFooter,
+  DialogClose,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { DataTable } from "./data-table";
+import { columns } from "./columns";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-interface EditableItem {
+interface Category {
   id: string;
-  text: string;
-  isEditing: boolean;
+  name: string;
+  description: string;
+  base_price: number;
+  currency: string;
 }
 
 export default function Page() {
-  const [items, setItems] = useState<EditableItem[]>([]);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [category, setCategory] = useState<Category[]>([]);
+  const [categoryName, setCategoryName] = useState<
+    string | number | readonly string[] | undefined
+  >("");
+  const [categoryDescription, setCategoryDescription] = useState<
+    string | number | readonly string[] | undefined
+  >("");
+  const [basePrice, setBasePrice] = useState("");
+  const [currency, setCurrency] = useState("");
 
-  const addNewItem = () => {
-    const newId = Date.now().toString();
-    const newItem: EditableItem = {
-      id: newId,
-      text: "",
-      isEditing: true,
-    };
-    setItems([...items, newItem]);
-    setEditingId(newId);
-  };
-
-  const handleSubmit = (id: string, newText: string) => {
-    if (newText.trim() === "") {
-      // Remove item if text is empty
-      setItems(items.filter(item => item.id !== id));
-    } else {
-      // Update item text and stop editing
-      setItems(items.map(item => 
-        item.id === id 
-          ? { ...item, text: newText, isEditing: false }
-          : item
-      ));
+  function saveCategory() {
+    //checks if base price is a valid number
+    if (isNaN(parseFloat(basePrice)) || basePrice.trim() === "") {
+      alert("Please enter a valid base price.");
+      return;
     }
-    setEditingId(null);
-  };
-
-  const handleDoubleClick = (id: string) => {
-    setItems(items.map(item =>
-      item.id === id
-        ? { ...item, isEditing: true }
-        : item
-    ));
-    setEditingId(id);
-  };
-
-  const handleKeyPress = (e: React.KeyboardEvent, id: string, text: string) => {
-    if (e.key === "Enter") {
-      handleSubmit(id, text);
-    }
-  };
-
-  const handleBlur = (id: string, text: string) => {
-    handleSubmit(id, text);
-  };
-
-  useEffect(() => {
-    if (editingId && inputRef.current) {
-      inputRef.current.focus();
-    }
-  }, [editingId]);
+    setCategory([
+      ...category,
+      {
+        id: Math.random().toString(),
+        name: categoryName as string,
+        description: categoryDescription as string,
+        base_price: parseFloat(basePrice),
+        currency: currency.toLocaleUpperCase() as string,
+      },
+    ]);
+  }
 
   return (
     <SidebarProvider
@@ -85,32 +83,79 @@ export default function Page() {
               <div className="px-4 lg:px-6">
                 <div className="flex flex-row items-center justify-between gap-4">
                   <h2 className="text-lg font-semibold">Product List</h2>
-                  <Button className="p-3" onClick={addNewItem}>+</Button>
-                </div>
-                
-                {/* Render editable items */}
-                <div className="mt-4 space-y-2">
-                  {items.map((item) => (
-                    <div key={item.id} className="flex items-center gap-2">
-                      {item.isEditing ? (
-                        <Input
-                          ref={editingId === item.id ? inputRef : null}
-                          defaultValue={item.text}
-                          onKeyPress={(e) => handleKeyPress(e, item.id, e.currentTarget.value)}
-                          onBlur={(e) => handleBlur(item.id, e.target.value)}
-                          className="flex-1"
-                          placeholder="Enter text..."
-                        />
-                      ) : (
-                        <div
-                          className="flex-1 p-2 cursor-pointer hover:bg-gray-100 rounded"
-                          onDoubleClick={() => handleDoubleClick(item.id)}
-                        >
-                          {item.text}
+                  <Dialog>
+                    <DialogTrigger asChild>
+                      <Button variant="outline">+</Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-[425px]">
+                      <DialogHeader>
+                        <DialogTitle>Add a new product category</DialogTitle>
+                        <DialogDescription>Make bla bla bla</DialogDescription>
+                      </DialogHeader>
+                      <div className="grid gap-4">
+                        <div className="grid gap-3">
+                          <Label htmlFor="category-name">
+                            Category Name
+                            <span className="text-red-500">*</span>
+                          </Label>
+                          <Input
+                            id="category-name"
+                            name="category-name"
+                            placeholder="Enter category name"
+                            value={categoryName}
+                            onChange={(e) => setCategoryName(e.target.value)}
+                          />
                         </div>
-                      )}
-                    </div>
-                  ))}
+                        <div className="grid gap-3">
+                          <Label htmlFor="category-description">
+                            Category Description
+                          </Label>
+                          <Textarea
+                            id="category-description"
+                            name="category-description"
+                            placeholder="Enter category description"
+                            value={categoryDescription}
+                            onChange={(e) =>
+                              setCategoryDescription(e.target.value)
+                            }
+                          />
+                        </div>{" "}
+                        <div className="grid gap-3">
+                          <Label htmlFor="base-price">Base Price</Label>
+                          <Textarea
+                            id="base-price"
+                            name="base-price"
+                            placeholder="Enter base price"
+                            value={basePrice}
+                            onChange={(e) => setBasePrice(e.target.value)}
+                          />
+                        </div>
+                        <div className="grid gap-3">
+                          <Label htmlFor="currency">Currency</Label>
+                          <Select onValueChange={setCurrency}>
+                            <SelectTrigger className="w-[180px]">
+                              <SelectValue placeholder="Currency" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="usd">USD</SelectItem>
+                              <SelectItem value="idr">IDR</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <DialogClose asChild>
+                          <Button variant="outline">Cancel</Button>
+                        </DialogClose>
+                        <Button type="submit" onClick={saveCategory}>
+                          Save category
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+                <div className="mt-4 space-y-2">
+                  <DataTable data={category} columns={columns} />
                 </div>
               </div>
             </div>
