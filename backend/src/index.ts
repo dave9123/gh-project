@@ -1,1 +1,5 @@
 import "dotenv/config";
+
+(async () => {
+    
+})();
