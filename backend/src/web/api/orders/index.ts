@@ -1,10 +1,11 @@
 import express from 'express';
-import { drizzle } from 'drizzle-orm/node-postgres';
+import db from '../../../modules/db';
 const router = express.Router();
 
-const db = drizzle();
+
 
 router.post('/', (req, res) => {
+
 });
 
 router.get('/', (req, res) => {
