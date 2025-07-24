@@ -1,3 +1,5 @@
+"use client";
+
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
@@ -30,24 +32,24 @@ export default function Page() {
   const handleSubmit = (id: string, newText: string) => {
     if (newText.trim() === "") {
       // Remove item if text is empty
-      setItems(items.filter(item => item.id !== id));
+      setItems(items.filter((item) => item.id !== id));
     } else {
       // Update item text and stop editing
-      setItems(items.map(item => 
-        item.id === id 
-          ? { ...item, text: newText, isEditing: false }
-          : item
-      ));
+      setItems(
+        items.map((item) =>
+          item.id === id ? { ...item, text: newText, isEditing: false } : item
+        )
+      );
     }
     setEditingId(null);
   };
 
   const handleDoubleClick = (id: string) => {
-    setItems(items.map(item =>
-      item.id === id
-        ? { ...item, isEditing: true }
-        : item
-    ));
+    setItems(
+      items.map((item) =>
+        item.id === id ? { ...item, isEditing: true } : item
+      )
+    );
     setEditingId(id);
   };
 
@@ -85,9 +87,11 @@ export default function Page() {
               <div className="px-4 lg:px-6">
                 <div className="flex flex-row items-center justify-between gap-4">
                   <h2 className="text-lg font-semibold">Product List</h2>
-                  <Button className="p-3" onClick={addNewItem}>+</Button>
+                  <Button className="p-3" onClick={addNewItem}>
+                    +
+                  </Button>
                 </div>
-                
+
                 {/* Render editable items */}
                 <div className="mt-4 space-y-2">
                   {items.map((item) => (
@@ -96,7 +100,9 @@ export default function Page() {
                         <Input
                           ref={editingId === item.id ? inputRef : null}
                           defaultValue={item.text}
-                          onKeyPress={(e) => handleKeyPress(e, item.id, e.currentTarget.value)}
+                          onKeyPress={(e) =>
+                            handleKeyPress(e, item.id, e.currentTarget.value)
+                          }
                           onBlur={(e) => handleBlur(item.id, e.target.value)}
                           className="flex-1"
                           placeholder="Enter text..."
