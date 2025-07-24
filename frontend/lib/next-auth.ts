@@ -76,9 +76,6 @@ export const authOptions: NextAuthOptions = {
         token.cookieBackendJwt = "";
       }
 
-      // console.log("JWT");
-      // console.log(token);
-      // console.log(user);
       if (user?.backendJwt) {
         token.backendJwt = user.backendJwt;
       }
