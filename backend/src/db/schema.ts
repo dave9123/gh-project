@@ -15,9 +15,9 @@ export const productsTable = pgTable("products", {
     id: integer().primaryKey().generatedAlwaysAsIdentity(),
     
     name: varchar().notNull(),
-    description: varchar().notNull(),
+    description: varchar().default("").notNull(),
     basePrice: integer().notNull(),
-    currencyType: varchar().default('IDR').notNull(),
+    currencyType: varchar().default("IDR").notNull(),
 
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull(),
