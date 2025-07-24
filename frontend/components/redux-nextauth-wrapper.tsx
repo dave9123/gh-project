@@ -8,14 +8,34 @@ import { permission } from "process";
 import { SessionProvider, signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import getBaseURL from "@/lib/getBaseURL";
+import { AppStore, makeStore } from "@/redux/store";
+import { Provider } from "react-redux";
 
 export default function ReduxNextAuthProvider({
   children,
-}: //   userPermissions,
-PropsWithChildren & {
+  initialSession,
+}: PropsWithChildren & {
   initialSession?: Session | null;
-  //   userPermissions?: TeamPermissionState[];
 }) {
+  const storeRef = useRef<AppStore | undefined>(undefined);
+  const path = usePathname();
+
+  async function handleSignOut() {
+    await fetch(`${getBaseURL()}/api/signout`, {
+      method: "POST",
+    });
+  }
+
+  if (!storeRef.current) {
+    storeRef.current = makeStore({
+      session: initialSession,
+
+      user: {
+        ...initialSession?.user,
+      },
+    });
+  }
+
   // useEffect(() => {
   //   if (initialSession) {
   //     store.dispatch(setSession(initialSession));
@@ -27,5 +47,9 @@ PropsWithChildren & {
   //   // eslint-disable-next-line
   // }, []);
 
-  return <SessionProvider>{children}</SessionProvider>;
+  return (
+    <SessionProvider>
+      <Provider store={storeRef.current}>{children} </Provider>
+    </SessionProvider>
+  );
 }
