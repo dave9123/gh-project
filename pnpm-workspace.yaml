@@ -1,7 +1,0 @@
-onlyBuiltDependencies:
-  - '@tailwindcss/oxide'
-  - baileys
-  - esbuild
-  - protobufjs
-  - sharp
-  - unrs-resolver
