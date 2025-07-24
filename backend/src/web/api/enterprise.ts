@@ -1,6 +1,7 @@
 import express from "express";
 import db from "../../modules/db";
 import { productsTable, usersTable } from "../../db/schema";
+import { eq } from "drizzle-orm";
 const router = express.Router();
 
 router.post("/create", (req, res) => {
@@ -33,26 +34,28 @@ router.get("/get", (req, res) => {
 });
 
 router.post("/product", (req, res) => {
-  if (!req.body?.name || !req.body?.description || !req.body?.basePrice || !req.body?.currencyType) return res.status(400).json({ error: "All fields are required" });
-  const { name, description, basePrice, currencyType } = req.body;
+  try {
+    if (!req.body?.name || !req.body?.description || !req.body?.basePrice || !req.body?.currencyType) return res.status(400).json({ error: "All fields are required" });
+    const { name, description, basePrice, currencyType } = req.body;
 
-  db.insert(productsTable).values({
-    name,
-    description,
-    basePrice,
-    currencyType,
-  }).then((result => {
-    res.send({
-      generatedId: result.oid,
+    db.insert(productsTable).values({
       name,
       description,
-      currencyType,
       basePrice,
-    });
-  })).catch((err) => {
-    console.error(err);
-    return res.status(500).json({ error: "Failed to create product" });
-  });
+      currencyType,
+    }).then((result => {
+      res.send({
+        generatedId: result.oid as number,
+        name,
+        description,
+        currencyType,
+        basePrice,
+      });
+    }));
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "An unexpected error occurred" });
+  }
 });
 
 router.delete("/product/:productId", (req, res) => {
@@ -60,7 +63,21 @@ router.delete("/product/:productId", (req, res) => {
 });
 
 router.get("/product/:productId", (req, res) => {
-  const { productId } = req.params;
+  try {
+    // const product = parseInt(req.params.productId);
+    // if (isNaN(product)) return res.status(400).json({ error: "Product ID is required" });
+    
+    // const productItem = db.select().from(usersTable).where(eq(usersTable.id, product));
+    // res.send({
+    //   generatedId: productItem.oid,
+    //   name: productItem.$dynamic.name,
+      
+    // })
+    // db.select()
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "An unexpected error occurred" });
+  }
 });
 
 router.get("/product", async (req, res) => {

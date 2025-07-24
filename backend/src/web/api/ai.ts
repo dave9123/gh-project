@@ -24,6 +24,8 @@ router.get("/", (req, res) => {
     categories = cts.map((category: any) => category.name);
   });
 
+  //TODO: DEFINE ALL THE FUNCTIONS HERE
+
   const functions = () => {
     return [
       {
