@@ -1,10 +1,7 @@
 "use client";
 
-import { AppSidebar } from "@/components/app-sidebar";
-import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useState, useRef, useEffect } from "react";
 
 interface EditableItem {
@@ -70,59 +67,46 @@ export default function Page() {
   }, [editingId]);
 
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
-      }
-    >
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-              <div className="px-4 lg:px-6">
-                <div className="flex flex-row items-center justify-between gap-4">
-                  <h2 className="text-lg font-semibold">Product List</h2>
-                  <Button className="p-3" onClick={addNewItem}>
-                    +
-                  </Button>
-                </div>
+    <div className="flex flex-1 flex-col">
+      <div className="@container/main flex flex-1 flex-col gap-2">
+        <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+          <div className="px-4 lg:px-6">
+            <div className="flex flex-row items-center justify-between gap-4">
+              <h2 className="text-lg font-semibold">Product List</h2>
+              <Button className="p-3" onClick={addNewItem}>
+                +
+              </Button>
+            </div>
 
-                {/* Render editable items */}
-                <div className="mt-4 space-y-2">
-                  {items.map((item) => (
-                    <div key={item.id} className="flex items-center gap-2">
-                      {item.isEditing ? (
-                        <Input
-                          ref={editingId === item.id ? inputRef : null}
-                          defaultValue={item.text}
-                          onKeyPress={(e) =>
-                            handleKeyPress(e, item.id, e.currentTarget.value)
-                          }
-                          onBlur={(e) => handleBlur(item.id, e.target.value)}
-                          className="flex-1"
-                          placeholder="Enter text..."
-                        />
-                      ) : (
-                        <div
-                          className="flex-1 p-2 cursor-pointer hover:bg-gray-100 rounded"
-                          onDoubleClick={() => handleDoubleClick(item.id)}
-                        >
-                          {item.text}
-                        </div>
-                      )}
+            {/* Render editable items */}
+            <div className="mt-4 space-y-2">
+              {items.map((item) => (
+                <div key={item.id} className="flex items-center gap-2">
+                  {item.isEditing ? (
+                    <Input
+                      ref={editingId === item.id ? inputRef : null}
+                      defaultValue={item.text}
+                      onKeyPress={(e) =>
+                        handleKeyPress(e, item.id, e.currentTarget.value)
+                      }
+                      onBlur={(e) => handleBlur(item.id, e.target.value)}
+                      className="flex-1"
+                      placeholder="Enter text..."
+                    />
+                  ) : (
+                    <div
+                      className="flex-1 p-2 cursor-pointer hover:bg-gray-100 rounded"
+                      onDoubleClick={() => handleDoubleClick(item.id)}
+                    >
+                      {item.text}
                     </div>
-                  ))}
+                  )}
                 </div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
-      </SidebarInset>
-    </SidebarProvider>
+      </div>
+    </div>
   );
 }
