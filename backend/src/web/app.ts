@@ -5,8 +5,6 @@ import enterprise from "./api/enterprise";
 import files from "./api/files";
 import orders from "./api/orders";
 
-import "dotenv/config";
-
 const app = express();
 
 app.use(express.json());
@@ -17,5 +15,7 @@ app.use("/api/enterprise", enterprise);
 app.use("/api/files", files);
 app.get("/", (_, res) => res.send("howdy"));
 
-const PORT = process.env.PORT || 3000
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+export default function startServer() {
+    const port = process.env.PORT || 3000;
+    app.listen(port, () => console.log(`Server is running on port ${port}`));
+};
