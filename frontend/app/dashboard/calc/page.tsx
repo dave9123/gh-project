@@ -113,6 +113,7 @@ interface FormBuilderData {
   currency: CurrencyType;
   fileConnections: FileUploadConnection[];
   selectedFileType?: string;
+  fileTypeMap?: string[];
   formValues: FormValues;
   createdAt?: string;
   updatedAt?: string;
@@ -753,6 +754,14 @@ const currencies: Record<CurrencyType, CurrencyConfig> = {
   },
 };
 
+// Default file type mapping
+const defaultFileTypeMap: { [key: string]: string[] } = {
+  pdf: [".pdf"],
+  images: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"],
+  "3d": [".stl", ".obj", ".ply", ".3mf", ".amf", ".gcode"],
+  documents: [".doc", ".docx", ".txt"],
+};
+
 export default function QuoteFormBuilder() {
   const [parameters, setParameters] = useState<Parameter[]>([]);
   const [activeTab, setActiveTab] = useState("builder");
@@ -772,6 +781,7 @@ export default function QuoteFormBuilder() {
   >([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [selectedFileType, setSelectedFileType] = useState<string>("pdf");
+  const [fileTypeMap, setFileTypeMap] = useState<string[]>([]);
   const [selectedCurrency, setSelectedCurrency] = useState<CurrencyType>("USD");
 
   // Save functionality state
@@ -1537,14 +1547,7 @@ export default function QuoteFormBuilder() {
 
   // Generate file accept attribute based on selected file type
   const getFileAcceptString = () => {
-    const fileTypeMap: { [key: string]: string[] } = {
-      pdf: [".pdf"],
-      images: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"],
-      "3d": [".stl", ".obj", ".ply", ".3mf", ".amf", ".gcode"],
-      documents: [".doc", ".docx", ".txt"],
-    };
-
-    return fileTypeMap[selectedFileType]?.join(",") || "";
+    return defaultFileTypeMap[selectedFileType]?.join(",") || "";
   };
 
   // Set file type selection (only one at a time)
@@ -1566,6 +1569,7 @@ export default function QuoteFormBuilder() {
       currency: selectedCurrency,
       fileConnections: fileConnections,
       selectedFileType: selectedFileType,
+      fileTypeMap: defaultFileTypeMap[selectedFileType],
       formValues: formValues,
       createdAt: lastSavedData?.createdAt,
       updatedAt: new Date().toISOString(),
@@ -1586,7 +1590,9 @@ export default function QuoteFormBuilder() {
       JSON.stringify(lastSavedData.parameters) !==
         JSON.stringify(currentData.parameters) ||
       JSON.stringify(lastSavedData.fileConnections) !==
-        JSON.stringify(currentData.fileConnections)
+        JSON.stringify(currentData.fileConnections) ||
+      JSON.stringify(lastSavedData.fileTypeMap) !==
+        JSON.stringify(currentData.fileTypeMap)
     );
   };
 
@@ -1764,6 +1770,7 @@ export default function QuoteFormBuilder() {
         setSelectedCurrency(result.data.currency);
         setFileConnections(result.data.fileConnections);
         setSelectedFileType(result.data.selectedFileType || "pdf");
+        setFileTypeMap(defaultFileTypeMap[selectedFileType || "pdf"]);
         setFormValues(result.data.formValues);
         setLastSavedData(result.data);
         setHasUnsavedChanges(false);
@@ -1833,6 +1840,7 @@ export default function QuoteFormBuilder() {
     setFileMetadata(null);
     setSelectedCurrency("USD");
     setSelectedFileType("pdf");
+    setFileTypeMap(defaultFileTypeMap["pdf"]);
     setLastSavedData(null);
     setHasUnsavedChanges(false);
     setSaveStatus("idle");
@@ -1914,6 +1922,9 @@ Check console for complete data structure.`);
       setSelectedCurrency(importedData.currency || "USD");
       setFileConnections(importedData.fileConnections || []);
       setSelectedFileType(importedData.selectedFileType || "pdf");
+      setFileTypeMap(
+        defaultFileTypeMap[importedData.selectedFileType || "pdf"]
+      );
       setFormValues(importedData.formValues || { quantity: "1" });
       setLastSavedData(null); // Reset save state since this is imported
       setHasUnsavedChanges(true); // Mark as changed since it's imported
