@@ -1,4 +1,5 @@
 import { relations } from "drizzle-orm";
+import { jsonb } from "drizzle-orm/pg-core";
 import {
   integer,
   pgTable,
@@ -26,7 +27,7 @@ export const productsTable = pgTable("products", {
   description: varchar().default("").notNull(),
   basePrice: integer().notNull(),
   currencyType: varchar().default("IDR").notNull(),
-  formData: varchar().default("").notNull(),
+  formData: jsonb().notNull(),
 
   businessId: integer()
     .notNull()
