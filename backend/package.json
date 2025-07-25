@@ -10,7 +10,7 @@
 		"@neondatabase/serverless": "^1.0.1",
 		"@types/jsonwebtoken": "^9.0.10",
 		"baileys": "^6.7.18",
-		"dotenv": "^17.2.0",
+		"dotenv": "^17.2.1",
 		"drizzle-orm": "^0.44.3",
 		"express": "^5.1.0",
 		"helmet": "^8.1.0",
@@ -18,7 +18,7 @@
 		"multer": "^2.0.2",
 		"openai": "^5.10.2",
 		"pg": "^8.16.3",
-		"zod": "^4.0.8"
+		"zod": "^4.0.10"
 	},
 	"devDependencies": {
 		"@types/express": "^5.0.3",
