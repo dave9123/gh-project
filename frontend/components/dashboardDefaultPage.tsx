@@ -35,6 +35,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import Link from "next/link";
 
 interface Category {
   id: string;
@@ -200,8 +201,8 @@ export default function DashboardDefaultPage() {
               </Dialog>
             </div>
             <div className="mt-4 space-y-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4">
-              {category.map((item) => (
-                <Card>
+              {category.map((item, index) => (
+                <Card key={index}>
                   <CardHeader>
                     <CardTitle className="text-2xl">{item.name}</CardTitle>
                     <CardDescription className="text-md text-muted-foreground">
@@ -235,9 +236,11 @@ export default function DashboardDefaultPage() {
                         </div>
                       </DialogContent>
                     </Dialog> */}
-                    <Button variant="outline" className="ml-0">
-                      Edit
-                    </Button>
+                    <Link href={`/dashboard/products/${item.id}`}>
+                      <Button variant="outline" className="ml-0">
+                        Edit
+                      </Button>
+                    </Link>
                   </CardFooter>
                 </Card>
               ))}
