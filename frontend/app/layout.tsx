@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import ReduxNextAuthProvider from "@/components/redux-nextauth-wrapper";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/next-auth";
+import NextAuthProvider from "@/components/nextauth-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,16 +25,12 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await getServerSession(authOptions);
-
   return (
     <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <ReduxNextAuthProvider initialSession={session}>
-          {children}
-        </ReduxNextAuthProvider>
+        <NextAuthProvider>{children}</NextAuthProvider>
       </body>
     </html>
   );

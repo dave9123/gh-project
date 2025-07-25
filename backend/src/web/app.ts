@@ -33,6 +33,8 @@ app.use((req, res, next) => {
   if (process.env.NODE_ENV !== "production")
     res.setHeader("Access-Control-Allow-Origin", "*");
   if (req.path.startsWith("/api/auth/oauth")) return next();
+
+  console.log("Request received:", req.method, req.path, req.headers);
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
 
