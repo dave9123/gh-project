@@ -80,6 +80,29 @@ interface AIResponse {
 const WORD_DELAY = 40; // ms per word
 const CHUNK_SIZE = 2; // Number of words to add at once
 
+// Add typing animation component
+const TypingAnimation = () => {
+  return (
+    <div className="flex items-center space-x-1 py-2">
+      <div className="flex space-x-1">
+        <div
+          className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+          style={{ animationDelay: "0ms" }}
+        ></div>
+        <div
+          className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+          style={{ animationDelay: "150ms" }}
+        ></div>
+        <div
+          className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
+          style={{ animationDelay: "300ms" }}
+        ></div>
+      </div>
+      <span className="text-sm text-gray-500 ml-2">AI sedang mengetik...</span>
+    </div>
+  );
+};
+
 export default function ChatInterface() {
   const { slug } = useParams();
   const [inputValue, setInputValue] = useState("");
@@ -109,6 +132,7 @@ export default function ChatInterface() {
   const [uploadedFiles, setUploadedFiles] = useState<FileUpload[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isThinking, setIsThinking] = useState(false);
   const router = useRouter();
 
   // Set businessId from slug param when component mounts
@@ -491,6 +515,7 @@ export default function ChatInterface() {
     // Create a new message with empty content first
     const messageId = Date.now().toString();
     setStreamingMessageId(messageId);
+    setIsThinking(true); // Start thinking animation
 
     setMessages((prev) => [
       ...prev,
@@ -512,6 +537,12 @@ export default function ChatInterface() {
     try {
       // Call the real AI API
       const response = await callAIAPI(userMessage);
+
+      // Stop thinking animation and start streaming
+      setIsThinking(false);
+
+      // Small delay before starting to stream text
+      await new Promise((resolve) => setTimeout(resolve, 500));
 
       // Stream the text
       await simulateTextStreaming(response);
@@ -535,6 +566,9 @@ export default function ChatInterface() {
     } catch (error) {
       console.error("Error getting AI response:", error);
 
+      // Stop thinking animation on error
+      setIsThinking(false);
+
       // Update with error message
       const errorMessage =
         "I apologize, but I encountered an error. Please try again.";
@@ -554,6 +588,7 @@ export default function ChatInterface() {
     setStreamingWords([]);
     setStreamingMessageId(null);
     setIsStreaming(false);
+    setIsThinking(false); // Ensure thinking is stopped
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -698,6 +733,11 @@ export default function ChatInterface() {
               : "text-gray-900"
           )}
         >
+          {/* Show thinking animation for current streaming message when thinking */}
+          {message.id === streamingMessageId && isThinking && (
+            <TypingAnimation />
+          )}
+
           {/* For user messages or completed system messages, render without animation */}
           {message.content && (
             <div
@@ -717,25 +757,19 @@ export default function ChatInterface() {
             </div>
           )}
 
-          {/* For streaming messages, render with animation */}
-          {message.id === streamingMessageId && (
-            <div className="inline">
-              <div className="prose prose-sm max-w-none inline">
-                <ReactMarkdown>
-                  {streamingWords
-                    .map((word) => (
-                      <span key={word.id} className="animate-fade-in inline">
-                        {word.text}
-                      </span>
-                    ))
-                    .join("")}
-                </ReactMarkdown>
+          {message.id === streamingMessageId &&
+            !isThinking &&
+            streamingWords.length > 0 && (
+              <div className="inline">
+                <div className="prose prose-sm max-w-none inline">
+                  <ReactMarkdown>
+                    {streamingWords.map((word) => word.text).join("")}
+                  </ReactMarkdown>
+                </div>
               </div>
-            </div>
-          )}
+            )}
         </div>
 
-        {/* Render cards if they exist and message is completed */}
         {message.cards && message.completed && (
           <div className="w-full max-w-[80%] mt-3 space-y-3">
             {message.cards.map((card, index) => (
@@ -770,7 +804,6 @@ export default function ChatInterface() {
           </div>
         )}
 
-        {/* Message actions */}
         {message.type === "system" && message.completed && (
           <div className="flex items-center gap-2 px-4 mt-1 mb-2">
             <button className="text-gray-400 hover:text-gray-600 transition-colors">

@@ -299,7 +299,6 @@ async function executeFunction(
           description: p.description,
           basePrice: p.basePrice,
           currencyType: p.currencyType,
-          formData: p.formData, // Include form data for more detailed product info
         }));
 
         if (formattedProducts.length === 0) {
@@ -391,7 +390,7 @@ async function executeFunction(
       }
 
     case "calculate_quote":
-      // Calculate quote based on product's form data and specifications
+      // Let AI model calculate the quote with comprehensive pricing rules
       try {
         // Fetch the specific product to get its form data and base price
         const products = await db
@@ -416,203 +415,143 @@ async function executeFunction(
         const formData = selectedProduct.formData as any;
         const userSpecs = args.specifications || {};
 
-        // Initialize calculation variables
-        let totalPrice = basePrice;
-        let quantity = userSpecs.quantity || 1;
-        let calculationBreakdown: {
-          basePrice: number;
-          quantity: number;
-          parameterCosts: Array<{
-            parameter: string;
-            description: string;
-            cost: number;
-          }>;
-          totalBeforeQuantity: number;
-          finalTotal: number;
-        } = {
-          basePrice: basePrice,
-          quantity: quantity,
-          parameterCosts: [],
-          totalBeforeQuantity: 0,
-          finalTotal: 0,
-        };
+        console.log("Delegating calculation to AI model");
+        console.log("Product:", selectedProduct.name);
+        console.log("Base Price:", basePrice);
+        console.log("User Specifications:", JSON.stringify(userSpecs, null, 2));
+        console.log("Form Data:", JSON.stringify(formData, null, 2));
 
-        // Process dynamic parameters from formData
-        if (
-          formData &&
-          formData.parameters &&
-          Array.isArray(formData.parameters)
-        ) {
-          for (const param of formData.parameters) {
-            const userValue = userSpecs[param.name];
+        // Create comprehensive calculation prompt for AI
+        const calculationPrompt = `
+PERHITUNGAN PENAWARAN HARGA - PANDUAN LENGKAP
 
-            if (userValue !== undefined && param.pricing) {
-              let parameterCost = 0;
-              let costDescription = "";
+Anda diminta untuk menghitung penawaran harga berdasarkan data produk dan spesifikasi pengguna. Ikuti aturan perhitungan berikut dengan SANGAT TELITI:
 
-              // Handle different parameter types
-              switch (param.type) {
-                case "FixedOption":
-                  // Handle fixed options (radio, select, toggle)
-                  if (param.options && Array.isArray(param.options)) {
-                    const selectedOption = param.options.find(
-                      (opt: any) =>
-                        opt.value === userValue || opt.label === userValue
-                    );
+=== DATA PRODUK ===
+Nama Produk: ${selectedProduct.name}
+Deskripsi: ${selectedProduct.description}
+Base Price: ${basePrice} ${selectedProduct.currencyType}
+Currency: ${selectedProduct.currencyType}
 
-                    if (selectedOption && selectedOption.pricing) {
-                      if (selectedOption.pricing.base_price) {
-                        parameterCost = selectedOption.pricing.base_price;
-                        costDescription = `${param.label}: ${selectedOption.label} (Harga dasar)`;
-                      } else if (selectedOption.pricing.unit_price) {
-                        parameterCost =
-                          selectedOption.pricing.unit_price * quantity;
-                        costDescription = `${param.label}: ${selectedOption.label} (Per unit)`;
-                      } else if (selectedOption.pricing.multiplier) {
-                        parameterCost =
-                          basePrice * selectedOption.pricing.multiplier;
-                        costDescription = `${param.label}: ${selectedOption.label} (Pengali ${selectedOption.pricing.multiplier}x)`;
-                      }
+=== SPESIFIKASI PENGGUNA ===
+${JSON.stringify(userSpecs, null, 2)}
 
-                      // Handle sub-options if they exist
-                      if (
-                        selectedOption.subOptions &&
-                        userSpecs[`${param.name}_sub`]
-                      ) {
-                        const selectedSubOption =
-                          selectedOption.subOptions.find(
-                            (sub: any) =>
-                              sub.value === userSpecs[`${param.name}_sub`]
-                          );
+=== STRUKTUR PRICING FORM ===
+${JSON.stringify(formData, null, 2)}
 
-                        if (selectedSubOption && selectedSubOption.price) {
-                          const subCost =
-                            selectedSubOption.pricingScope === "per_qty"
-                              ? selectedSubOption.price * quantity
-                              : selectedSubOption.price;
-                          parameterCost += subCost;
-                          costDescription += ` + ${selectedSubOption.label}`;
-                        }
-                      }
-                    }
-                  }
-                  break;
+=== ATURAN PERHITUNGAN PRICING ===
 
-                case "NumericValue":
-                  // Handle numeric inputs (min, max, step)
-                  const numericValue = parseFloat(userValue);
-                  if (!isNaN(numericValue) && param.pricing) {
-                    if (param.pricing.unit_price) {
-                      parameterCost = param.pricing.unit_price * numericValue;
-                      if (param.pricingScope === "per_qty") {
-                        parameterCost *= quantity;
-                      }
-                      costDescription = `${param.label}: ${numericValue}${
-                        param.unit || ""
-                      } (${param.pricing.unit_price}/${param.unit || "unit"})`;
-                    } else if (param.pricing.multiplier) {
-                      parameterCost =
-                        basePrice * param.pricing.multiplier * numericValue;
-                      costDescription = `${param.label}: ${numericValue}${
-                        param.unit || ""
-                      } (Pengali)`;
-                    } else if (param.pricing.step_pricing) {
-                      const steps = Math.floor(
-                        numericValue / param.pricing.step_pricing.threshold
-                      );
-                      parameterCost =
-                        steps * param.pricing.step_pricing.step_amount;
-                      costDescription = `${param.label}: ${numericValue}${
-                        param.unit || ""
-                      } (Step pricing)`;
-                    }
-                  }
-                  break;
+1. **QUANTITY**: 
+   - Ambil dari userSpecs.quantity, default = 1
+   - Quantity mengalikan TOTAL AKHIR
 
-                case "DerivedCalc":
-                  // Handle calculated values based on formula
-                  if (param.formula && param.pricing) {
-                    // Simple formula evaluation (could be enhanced)
-                    let calculatedValue = 0;
-                    try {
-                      // Replace parameter names in formula with actual values
-                      let formula = param.formula;
-                      Object.keys(userSpecs).forEach((key) => {
-                        formula = formula.replace(
-                          new RegExp(`\\b${key}\\b`, "g"),
-                          userSpecs[key]
-                        );
-                      });
+2. **MAIN UNITS PARAMETER**:
+   - Cari parameter dengan isMainUnits: true
+   - Nilai dari parameter ini akan digunakan untuk unit_price calculations
+   - Contoh: jika Weight = 10 grams dan isMainUnits: true, maka mainUnitsValue = 10
 
-                      // Basic evaluation (in production, use a safe evaluator)
-                      calculatedValue = eval(formula);
+3. **PARAMETER TYPES & PRICING**:
 
-                      if (param.pricing.unit_price) {
-                        parameterCost =
-                          param.pricing.unit_price * calculatedValue;
-                      }
-                      costDescription = `${param.label}: Kalkulasi (${calculatedValue})`;
-                    } catch (error) {
-                      console.error("Formula evaluation error:", error);
-                    }
-                  }
-                  break;
-              }
+   **A. FixedOption (radio/select/toggle)**:
+   - Cari option yang dipilih berdasarkan userSpecs[parameter.name]
+   - Match dengan option.value atau option.label
+   - Hitung pricing dari selectedOption.pricing:
+     
+     • base_price: Tambahkan langsung ke subtotal
+     • unit_price: 
+       - Jika parameter.pricingScope === "per_unit": unit_price * mainUnitsValue
+       - Jika parameter.pricingScope === "per_qty" atau undefined: unit_price saja
+     • multiplier: JANGAN kalikan langsung, kumpulkan untuk nanti
+     • subOptions: Proses jika ada, gunakan pricingScope masing-masing
 
-              // Apply pricing scope
-              if (param.pricingScope === "per_qty" && parameterCost > 0) {
-                parameterCost *= quantity;
-              }
+   **B. NumericValue/DerivedCalc**:
+   - Ambil nilai numerik dari userSpecs[parameter.name]
+   - Hitung dari parameter.pricing:
+     
+     • base_price: Tambahkan langsung ke subtotal
+     • unit_price:
+       - Jika parameter.pricingScope === "per_unit": nilai * unit_price
+       - Jika parameter.pricingScope === "per_qty": unit_price saja
+     • step_pricing: Jika nilai > threshold, tambahkan (nilai - threshold) * step_amount
+     • multiplier: Kumpulkan untuk aplikasi akhir
 
-              // Add to total and breakdown
-              if (parameterCost > 0) {
-                totalPrice += parameterCost;
-                calculationBreakdown.parameterCosts.push({
-                  parameter: param.name,
-                  description: costDescription,
-                  cost: parameterCost,
-                });
-              }
-            }
-          }
-        }
+4. **PERHITUNGAN STEP BY STEP**:
+   
+   STEP 1: Hitung subtotal dari semua parameter
+   subtotal = base_price + sum(semua parameter costs)
+   
+   STEP 2: Kumpulkan semua multipliers
+   totalMultiplier = multiplier1 * multiplier2 * multiplier3
+   
+   STEP 3: Hitung unit price
+   unitPrice = subtotal * totalMultiplier
+   
+   STEP 4: Hitung total final
+   finalTotal = unitPrice * quantity
 
-        // Apply final quantity multiplier to base price
-        const baseWithQuantity = basePrice * quantity;
-        calculationBreakdown.totalBeforeQuantity = totalPrice;
-        calculationBreakdown.finalTotal =
-          totalPrice + (baseWithQuantity - basePrice);
+5. **OUTPUT FORMAT YANG DIPERLUKAN**:
+   Berikan hasil dalam format JSON yang VALID seperti contoh berikut:
+   {
+     "calculation_success": true,
+     "quote_id": "generated-uuid",
+     "product_name": "nama produk",
+     "user_specifications": {user specs object},
+     "base_price": number,
+     "quantity": number,
+     "main_units_value": number,
+     "main_units_parameter": "nama parameter dengan isMainUnits",
+     "parameter_calculations": [...],
+     "multipliers": [...],
+     "subtotal": number,
+     "total_multiplier": number,
+     "unit_price": number,
+     "final_total": number,
+     "currency": "IDR/USD",
+     "calculation_breakdown": "penjelasan lengkap perhitungan step by step"
+   }
 
-        const quote = {
-          id: crypto.randomUUID(),
-          category: args.category,
-          specifications: userSpecs,
-          quantity: quantity,
-          basePrice: basePrice,
-          unitPrice: Math.round(calculationBreakdown.finalTotal / quantity),
-          totalPrice: Math.round(calculationBreakdown.finalTotal),
-          currency: selectedProduct.currencyType || "IDR",
-          calculationBreakdown: calculationBreakdown,
-          productInfo: {
-            id: selectedProduct.id,
-            name: selectedProduct.name,
-            description: selectedProduct.description,
-          },
-          generatedAt: new Date().toISOString(),
-        };
+=== CONTOH PERHITUNGAN ===
+Jika ada:
+- Base Price: 1000
+- Weight: 10 grams (isMainUnits: true)
+- Paper Size A3: unit_price 45, pricingScope: per_unit
+- Printing Sides 2: multiplier 1.56, unit_price 999.92, pricingScope: per_unit
+- Colour Black & White: no pricing
+- Quantity: 1
+
+Perhitungan:
+1. Paper Size: 45 * 10 = 450
+2. Printing Sides: 999.92 * 10 = 9999.2, multiplier = 1.56
+3. Subtotal: 1000 + 450 + 9999.2 = 11449.2
+4. Unit Price: 11449.2 * 1.56 = 17860.752
+5. Final Total: 17860.752 * 1 = 17860.752
+
+HITUNG DENGAN SANGAT TELITI DAN BERIKAN RESULT DALAM FORMAT JSON YANG VALID!
+`;
 
         return {
           success: true,
-          quote: quote,
+          ai_calculation_required: true,
+          calculation_prompt: calculationPrompt,
+          product_data: {
+            id: selectedProduct.id,
+            name: selectedProduct.name,
+            description: selectedProduct.description,
+            basePrice: basePrice,
+            currencyType: selectedProduct.currencyType,
+            formData: formData,
+          },
+          user_specifications: userSpecs,
           instruction:
-            "Sajikan penawaran harga ini kepada pengguna dengan cara yang jelas dan ramah. Sertakan rincian biaya dan tanyakan apakah mereka ingin melanjutkan atau mengubah sesuatu.",
+            "Gunakan prompt perhitungan untuk menghitung penawaran harga dengan AI model. Berikan hasil yang akurat dan detail.",
         };
       } catch (error) {
+        console.error("Calculate quote preparation error:", error);
         return {
           success: false,
-          error: "Gagal menghitung penawaran harga",
+          error: "Gagal mempersiapkan perhitungan penawaran harga",
           instruction:
-            "Beri tahu pengguna bahwa terjadi kesalahan dalam menghitung penawaran harga dan sarankan mereka untuk mencoba lagi dengan spesifikasi yang berbeda.",
+            "Beri tahu pengguna bahwa terjadi kesalahan dalam mempersiapkan perhitungan penawaran harga.",
         };
       }
 
@@ -647,7 +586,7 @@ export async function chatWithAI(
 ) {
   try {
     const completion = await openai.chat.completions.create({
-      model: "deepseek/deepseek-chat-v3-0324:free",
+      model: process.env.AI_MODEL || "deepseek/deepseek-chat-v3-0324:free",
       messages: messages as any,
       tools: tools as any,
       tool_choice: "auto",
@@ -657,32 +596,45 @@ export async function chatWithAI(
     if (!choice) {
       throw new Error("Tidak ada respons dari AI");
     }
-    console.log(choice);
+    console.log("AI Response choice:", choice);
+
     if (choice.finish_reason === "tool_calls" && choice.message.tool_calls) {
       const toolCalls = choice.message.tool_calls;
 
+      // Add the assistant message with tool calls to the conversation
+      messages.push({
+        role: "assistant",
+        content: choice.message.content,
+        tool_calls: choice.message.tool_calls,
+      });
+
+      // Process each tool call and add tool responses
       for (const toolCall of toolCalls) {
         const functionName = toolCall.function.name;
         const args = JSON.parse(toolCall.function.arguments);
         const result = await executeFunction(functionName, args, businessId);
 
-        // Add the function result to messages
+        // Add the tool response with proper structure
         messages.push({
           role: "tool",
           tool_call_id: toolCall.id,
           content: JSON.stringify(result),
-        } as any);
+        });
       }
 
-      // Add an additional instruction for the AI to process the function results
+      // Add an additional instruction for specific function types
       if (toolCalls.some((call) => call.function.name === "get_products")) {
         messages.push({
           role: "system",
           content:
             "Sekarang hasilkan respons yang membantu dan komunikatif tentang produk yang tersedia. Sertakan nama produk spesifik, deskripsi, dan informasi harga. Buatlah mudah dipahami pengguna untuk memahami pilihan mereka.",
-        } as any);
-        console.log(messages);
+        });
       }
+
+      console.log(
+        "Messages before recursive call:",
+        JSON.stringify(messages, null, 2)
+      );
 
       // Add a small delay before recursive call to avoid rate limiting
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -704,7 +656,7 @@ export async function chatWithAI(
       // Try one more time
       try {
         const completion = await openai.chat.completions.create({
-          model: "deepseek/deepseek-chat-v3-0324:free",
+          model: process.env.AI_MODEL || "deepseek/deepseek-chat-v3-0324:free",
           messages: messages as any,
           tools: tools as any,
           tool_choice: "auto",
