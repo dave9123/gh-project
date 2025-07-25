@@ -1,33 +1,36 @@
 {
-	"scripts": {
-		"dev": "bun src/index.ts",
-		"build": "tsc -p tsconfig.json",
-		"migrations:generate": "drizzle-kit generate",
-		"migrations:push": "drizzle-kit push"
-	},
-	"dependencies": {
-		"@aws-sdk/client-s3": "^3.850.0",
-		"@neondatabase/serverless": "^1.0.1",
-		"@types/jsonwebtoken": "^9.0.10",
-		"baileys": "^6.7.18",
-		"dotenv": "^17.2.1",
-		"drizzle-orm": "^0.44.3",
-		"express": "^5.1.0",
-		"helmet": "^8.1.0",
-		"jsonwebtoken": "^9.0.2",
-		"multer": "^2.0.2",
-		"openai": "^5.10.2",
-		"pg": "^8.16.3",
-		"zod": "^4.0.10"
-	},
-	"devDependencies": {
-		"@types/express": "^5.0.3",
-		"@types/multer": "^2.0.0",
-		"@types/node": "^24.1.0",
-		"@types/pg": "^8.15.4",
-		"drizzle-kit": "^0.31.4",
-		"tsx": "^4.20.3",
-		"typescript": "^5.8.3",
-		"wrangler": "^4.26.0"
-	}
+  "scripts": {
+    "dev": "bun src/index.ts",
+    "nodemondev": "nodemon --exec ts-node src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "migrations:generate": "drizzle-kit generate",
+    "migrations:push": "drizzle-kit push"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.850.0",
+    "@neondatabase/serverless": "^1.0.1",
+    "@types/jsonwebtoken": "^9.0.10",
+    "baileys": "^6.7.18",
+    "dotenv": "^17.2.1",
+    "drizzle-orm": "^0.44.3",
+    "express": "^5.1.0",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^2.0.2",
+    "openai": "^5.10.2",
+    "pg": "^8.16.3",
+    "zod": "^4.0.10"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^24.1.0",
+    "@types/pg": "^8.15.4",
+    "drizzle-kit": "^0.31.4",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "wrangler": "^4.26.0"
+  }
 }
