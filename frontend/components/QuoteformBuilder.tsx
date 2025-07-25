@@ -107,7 +107,7 @@ interface FileUploadConnection {
   description: string;
 }
 
-interface FormBuilderData {
+export interface FormBuilderData {
   id?: string;
   name: string;
   description?: string;
@@ -129,7 +129,9 @@ interface SaveResponse {
 }
 
 interface QuoteFormBuilderProps {
-  product?: ProductTypes;
+  product?: ProductTypes & {
+    formData: FormBuilderData;
+  };
 }
 
 // Safe expression evaluator for basic math operations
@@ -785,6 +787,8 @@ const defaultFileTypeMap: { [key: string]: string[] } = {
 export default function QuoteFormBuilder({
   product,
 }: QuoteFormBuilderProps = {}) {
+  console.log(product);
+
   const router = useRouter();
   const [parameters, setParameters] = useState<Parameter[]>([]);
   const [activeTab, setActiveTab] = useState("builder");
@@ -827,52 +831,42 @@ export default function QuoteFormBuilder({
       setFormDescription(product.description);
 
       // Initialize with default values
-      let parsedFormData: Partial<FormBuilderData> = {
-        parameters: [],
-        currency:
-          product.currencyType === "USD" || product.currencyType === "IDR"
-            ? product.currencyType
-            : "USD", // Fallback to USD for unsupported currencies
-        fileConnections: [],
-        selectedFileType: "pdf",
-        fileTypeMap: defaultFileTypeMap["pdf"],
-        formValues: { quantity: "1" },
-      };
+      let parsedFormData: Partial<FormBuilderData> = product.formData;
 
       // Try to parse formData if it exists and is not empty
-      if (product.formData && product.formData.trim() !== "") {
-        try {
-          const parsed: Partial<FormBuilderData> = JSON.parse(product.formData);
+      // if (product.formData && product.formData.trim() !== "") {
+      //   try {
+      //     const parsed: Partial<FormBuilderData> = JSON.parse(product.formData);
 
-          // Merge parsed data with defaults, keeping defaults for missing fields
-          parsedFormData = {
-            parameters: parsed.parameters || [],
-            currency:
-              parsed.currency === "USD" || parsed.currency === "IDR"
-                ? parsed.currency
-                : product.currencyType === "USD" ||
-                  product.currencyType === "IDR"
-                ? product.currencyType
-                : "USD", // Fallback chain with validation
-            fileConnections: parsed.fileConnections || [],
-            selectedFileType: parsed.selectedFileType || "pdf",
-            fileTypeMap:
-              parsed.fileTypeMap ||
-              defaultFileTypeMap[parsed.selectedFileType || "pdf"],
-            formValues: parsed.formValues || { quantity: "1" },
-          };
+      //     // Merge parsed data with defaults, keeping defaults for missing fields
+      //     parsedFormData = {
+      //       parameters: parsed.parameters || [],
+      //       currency:
+      //         parsed.currency === "USD" || parsed.currency === "IDR"
+      //           ? parsed.currency
+      //           : product.currencyType === "USD" ||
+      //             product.currencyType === "IDR"
+      //           ? product.currencyType
+      //           : "USD", // Fallback chain with validation
+      //       fileConnections: parsed.fileConnections || [],
+      //       selectedFileType: parsed.selectedFileType || "pdf",
+      //       fileTypeMap:
+      //         parsed.fileTypeMap ||
+      //         defaultFileTypeMap[parsed.selectedFileType || "pdf"],
+      //       formValues: parsed.formValues || { quantity: "1" },
+      //     };
 
-          console.log("Successfully parsed product formData");
-        } catch (error) {
-          console.warn(
-            "Failed to parse product formData, using defaults:",
-            error
-          );
-          // parsedFormData already contains defaults, so we continue with those
-        }
-      } else {
-        console.log("Product formData is empty or null, using default values");
-      }
+      //     console.log("Successfully parsed product formData");
+      //   } catch (error) {
+      //     console.warn(
+      //       "Failed to parse product formData, using defaults:",
+      //       error
+      //     );
+      //     // parsedFormData already contains defaults, so we continue with those
+      //   }
+      // } else {
+      //   console.log("Product formData is empty or null, using default values");
+      // }
 
       // Apply the parsed/default form data to component state
       if (parsedFormData.parameters) {
@@ -1384,18 +1378,15 @@ export default function QuoteFormBuilder({
           const unitsPerQty = param.unitsPerQuantity || 1;
           const totalUnits = numValue * unitsPerQty;
 
-          // Unit price scales with main units if this param has unit pricing
+          // Unit price calculation: total units × unit price (no double multiplication)
           if (param.pricing.unit_price) {
-            const unitCost =
-              totalUnits * param.pricing.unit_price * mainUnitsValue;
+            const unitCost = totalUnits * param.pricing.unit_price;
             paramTotal += unitCost;
             description +=
               (description ? " + " : "") +
               `${totalUnits} ${param.unit || "units"} × ${
                 currencies[selectedCurrency].symbol
-              }${param.pricing.unit_price} × ${mainUnitsValue} ${
-                mainUnitsParam?.unit || "main units"
-              }`;
+              }${param.pricing.unit_price}`;
           }
 
           if (
@@ -2318,10 +2309,10 @@ Check console for complete data structure.`);
                         <DropdownMenuItem
                           onClick={handleDelete}
                           className="text-destructive"
-                          disabled={isSaving}
+                          // disabled={isSaving}
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
-                          Delete Product
+                          Delete Product {isSaving}
                         </DropdownMenuItem>
                       </>
                     )}

@@ -1,3 +1,5 @@
+import { FormBuilderData } from "@/components/QuoteformBuilder";
+
 export type ProductTypes = {
   id: string;
   name: string;
