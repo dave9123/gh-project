@@ -28,6 +28,7 @@ app.use((req, res, next) => {
 });
 
 app.use(express.json());
+app.get("/ping", (_, res) => res.status(200).send("Pong!"));
 app.use((req, res, next) => {
   if (process.env.NODE_ENV !== "production")
     res.setHeader("Access-Control-Allow-Origin", "*");
