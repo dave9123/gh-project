@@ -57,6 +57,7 @@ import type {
   SubOption,
 } from "@/lib/formBuilderTypes";
 import type { ProductTypes } from "@/lib/product.d";
+import { redirect, useRouter } from "next/navigation";
 
 type CurrencyType = "USD" | "IDR";
 
@@ -784,6 +785,7 @@ const defaultFileTypeMap: { [key: string]: string[] } = {
 export default function QuoteFormBuilder({
   product,
 }: QuoteFormBuilderProps = {}) {
+  const router = useRouter();
   const [parameters, setParameters] = useState<Parameter[]>([]);
   const [activeTab, setActiveTab] = useState("builder");
   const [formValues, setFormValues] = useState<FormValues>({ quantity: "1" });
@@ -2019,6 +2021,74 @@ export default function QuoteFormBuilder({
     }
   };
 
+  const deleteProduct = async (): Promise<SaveResponse | undefined> => {
+    if (!lastSavedData?.id) {
+      alert("No saved product to delete");
+      return;
+    }
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to permanently delete "${formName}"? This action cannot be undone.`
+    );
+    if (!confirmDelete) return;
+
+    try {
+      setIsSaving(true);
+      setSaveStatus("saving");
+
+      const response = await fetch(
+        `/api/business/product/${lastSavedData.id}`,
+        {
+          method: "DELETE",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(
+          errorData.message || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      redirect("/dashboard");
+    } catch (error) {
+      setSaveStatus("error");
+      const errorMessage =
+        error instanceof Error ? error.message : "An unknown error occurred";
+
+      // Clear error status after 5 seconds
+      setTimeout(() => {
+        setSaveStatus("idle");
+      }, 5000);
+
+      return {
+        success: false,
+        message: "Delete failed",
+        error: errorMessage,
+      };
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    const result = await deleteProduct();
+
+    if (result) {
+      if (!result.success) {
+        console.error("Delete failed:", result.error);
+        alert(`Delete failed: ${result.error}`);
+      } else {
+        console.log("Delete successful:", result.message);
+        // You could show a success toast notification here
+        alert("Product deleted successfully");
+      }
+    }
+  };
+
   const resetForm = () => {
     if (showUnsavedWarning()) {
       const confirmReset = window.confirm(
@@ -2242,6 +2312,19 @@ Check console for complete data structure.`);
                     >
                       Reset Form
                     </DropdownMenuItem>
+                    {lastSavedData?.id && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onClick={handleDelete}
+                          className="text-destructive"
+                          disabled={isSaving}
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete Product
+                        </DropdownMenuItem>
+                      </>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
                 <input
