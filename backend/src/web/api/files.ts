@@ -1,6 +1,7 @@
 import express from "express";
 import db from "../../modules/db";
 import multer from "multer";
+import { filesTable } from "../../db/schema";
 const router = express.Router();
 
 const upload = multer({ dest: 'uploads/' });

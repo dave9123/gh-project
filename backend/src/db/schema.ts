@@ -56,3 +56,15 @@ export const ordersTable = pgTable("orders", {
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull()
 });
+
+export const filesTable = pgTable("files", {
+    id: integer().primaryKey().generatedAlwaysAsIdentity(),
+
+    filename: varchar().notNull(),
+    originalname: varchar().notNull(),
+    mimetype: varchar().notNull(),
+    size: integer().notNull(),
+
+    createdAt: timestamp().defaultNow().notNull(),
+    updatedAt: timestamp().defaultNow().notNull()
+});
