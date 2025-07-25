@@ -1052,6 +1052,46 @@ export default function QuoteFormBuilder() {
     return param.conditional.showWhen.includes(parentValue);
   };
 
+  const validateRequiredSubOptions = (): string[] => {
+    const errors: string[] = [];
+
+    parameters
+      .filter(
+        (param) =>
+          param.required &&
+          param.type === "FixedOption" &&
+          isParameterVisible(param, formValues)
+      )
+      .forEach((param) => {
+        const selectedValue = formValues[param.name];
+
+        if (selectedValue && selectedValue !== "") {
+          const selectedOption = param.options?.find(
+            (opt) => opt.value === selectedValue
+          );
+
+          if (
+            selectedOption?.subOptions &&
+            selectedOption.subOptions.length > 0
+          ) {
+            const hasSubOptionSelected = selectedOption.subOptions.some(
+              (subOption) => formValues[`${param.name}_${subOption.value}`]
+            );
+
+            if (!hasSubOptionSelected) {
+              errors.push(
+                `${
+                  selectedOption.label || param.label || param.name
+                } requires selecting an additional option`
+              );
+            }
+          }
+        }
+      });
+
+    return errors;
+  };
+
   const calculatePrice = () => {
     let unitTotal = 0;
     const breakdown: Array<{
@@ -1570,15 +1610,61 @@ export default function QuoteFormBuilder() {
         throw new Error(`Please provide names for all product options`);
       }
 
+      // Check for required parameters and sub-options validation
+      for (const param of formData.parameters) {
+        // Only validate visible parameters
+        if (!isParameterVisible(param, formValues)) continue;
+
+        if (param.required && param.type === "FixedOption") {
+          const selectedValue = formValues[param.name];
+          if (!selectedValue || selectedValue === "") {
+            throw new Error(`${param.label || param.name} is required`);
+          }
+
+          // Check if the selected option has sub-options and if they are required
+          const selectedOption = param.options?.find(
+            (opt) => opt.value === selectedValue
+          );
+          if (
+            selectedOption?.subOptions &&
+            selectedOption.subOptions.length > 0
+          ) {
+            const hasSubOptionSelected = selectedOption.subOptions.some(
+              (subOption) => formValues[`${param.name}_${subOption.value}`]
+            );
+
+            if (!hasSubOptionSelected) {
+              throw new Error(
+                `Please select an additional option for ${
+                  selectedOption.label || param.label || param.name
+                }`
+              );
+            }
+          }
+        } else if (param.required) {
+          const value = formValues[param.name];
+          if (
+            value === undefined ||
+            value === null ||
+            value === "" ||
+            value === 0
+          ) {
+            throw new Error(`${param.label || param.name} is required`);
+          }
+        }
+      }
+
       // API endpoint - adjust this to match your backend
       // Expected API structure:
       // POST /api/products - Create new product configuration
-      // PUT /api/products/:id - Update existing product  
+      // PUT /api/products/:id - Update existing product
       // GET /api/products/:id - Load product configuration by ID
       //
       // Request body should match FormBuilderData interface
       // Response should match SaveResponse interface
-      const endpoint = formData.id ? `/api/products/${formData.id}` : "/api/products";
+      const endpoint = formData.id
+        ? `/api/products/${formData.id}`
+        : "/api/products";
       const method = formData.id ? "PUT" : "POST";
 
       const response = await fetch(endpoint, {
@@ -2006,8 +2092,9 @@ Check console for complete data structure.`);
           <div>
             <h1 className="text-3xl font-bold mb-2">Product Quote Builder</h1>
             <p className="text-muted-foreground">
-              Configure product parameters and pricing rules for customer quote generation.
-              Set up options, calculations, and pricing that customers will see when requesting quotes.
+              Configure product parameters and pricing rules for customer quote
+              generation. Set up options, calculations, and pricing that
+              customers will see when requesting quotes.
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
@@ -2198,7 +2285,9 @@ Check console for complete data structure.`);
                       />
                     </div>
                     <div>
-                      <Label htmlFor={`label-${param.id}`}>Customer Label</Label>
+                      <Label htmlFor={`label-${param.id}`}>
+                        Customer Label
+                      </Label>
                       <Input
                         id={`label-${param.id}`}
                         value={param.label}
@@ -2260,7 +2349,9 @@ Check console for complete data structure.`);
                           updateParameter(param.id, { required: checked })
                         }
                       />
-                      <Label htmlFor={`required-${param.id}`}>Required for Quote</Label>
+                      <Label htmlFor={`required-${param.id}`}>
+                        Required for Quote
+                      </Label>
                     </div>
                   </div>
 
@@ -2283,8 +2374,12 @@ Check console for complete data structure.`);
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="select">Dropdown</SelectItem>
-                              <SelectItem value="radio">Radio Buttons</SelectItem>
-                              <SelectItem value="toggle">Toggle Buttons</SelectItem>
+                              <SelectItem value="radio">
+                                Radio Buttons
+                              </SelectItem>
+                              <SelectItem value="toggle">
+                                Toggle Buttons
+                              </SelectItem>
                             </SelectContent>
                           </Select>
                           <Button
@@ -2874,7 +2969,8 @@ Check console for complete data structure.`);
                         <div className="grid grid-cols-2 gap-4 mt-2">
                           <div>
                             <Label className="text-sm">
-                              Base Price ({currencies[selectedCurrency].symbol} per item ordered)
+                              Base Price ({currencies[selectedCurrency].symbol}{" "}
+                              per item ordered)
                             </Label>
                             <Input
                               type="number"
@@ -2898,7 +2994,8 @@ Check console for complete data structure.`);
                           </div>
                           <div>
                             <Label className="text-sm">
-                              Unit Price ({currencies[selectedCurrency].symbol} per main unit)
+                              Unit Price ({currencies[selectedCurrency].symbol}{" "}
+                              per main unit)
                             </Label>
                             <Input
                               type="number"
@@ -3029,7 +3126,8 @@ Check console for complete data structure.`);
                     </Button>
                   </div>
                   <CardDescription>
-                    Preview how customers will see your product configuration form
+                    Preview how customers will see your product configuration
+                    form
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -3394,52 +3492,71 @@ Check console for complete data structure.`);
                             );
                             const subOptionDisplayType =
                               selectedOption?.displayType || "radio";
+                            const isSubOptionRequired = param.required; // Sub-options are required if parent is required
+                            const hasSubOptionSelected =
+                              selectedOption?.subOptions?.some(
+                                (subOption) =>
+                                  formValues[`${param.name}_${subOption.value}`]
+                              );
 
                             return selectedOption?.subOptions &&
                               selectedOption.subOptions.length > 0 ? (
                               <div className="ml-4 mt-3 space-y-3 border-l-2 border-gray-200 pl-4">
-                                <Label className="text-sm font-medium text-gray-700">
-                                  Additional Options for {selectedOption.label}:
-                                </Label>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <Label className="text-sm font-medium text-gray-700">
+                                    Additional Options for{" "}
+                                    {selectedOption.label}:
+                                  </Label>
+                                  {isSubOptionRequired && (
+                                    <Badge
+                                      variant="destructive"
+                                      className="text-xs font-medium px-2 py-1"
+                                    >
+                                      REQUIRED
+                                    </Badge>
+                                  )}
+                                </div>
 
                                 {/* Radio display for sub-options */}
                                 {subOptionDisplayType === "radio" && (
-                                  <div className="space-y-2">
-                                    {/* Add "None" option for sub-options */}
-                                    <div className="flex items-center space-x-3 p-2 rounded hover:bg-gray-50">
-                                      <input
-                                        type="radio"
-                                        id={`suboption-none-${param.id}`}
-                                        name={`${param.name}_suboptions`}
-                                        value=""
-                                        checked={
-                                          !selectedOption.subOptions.some(
-                                            (subOption) =>
-                                              formValues[
-                                                `${param.name}_${subOption.value}`
-                                              ]
-                                          )
-                                        }
-                                        onChange={() => {
-                                          // Clear all sub-options when "None" is selected
-                                          selectedOption.subOptions?.forEach(
-                                            (subOption) => {
-                                              updateFormValue(
-                                                `${param.name}_${subOption.value}`,
-                                                false
-                                              );
-                                            }
-                                          );
-                                        }}
-                                        className="w-4 h-4 text-primary focus:ring-primary"
-                                      />
-                                      <Label
-                                        htmlFor={`suboption-none-${param.id}`}
-                                        className="text-sm cursor-pointer"
-                                      >
-                                        None (no additional options)
-                                      </Label>
-                                    </div>
+                                  <div
+                                    className={`space-y-2 ${
+                                      isSubOptionRequired &&
+                                      !hasSubOptionSelected
+                                        ? "border-2 border-destructive rounded-lg p-2"
+                                        : ""
+                                    }`}
+                                  >
+                                    {/* Add "None" option for sub-options only if not required */}
+                                    {!isSubOptionRequired && (
+                                      <div className="flex items-center space-x-3 p-2 rounded hover:bg-gray-50">
+                                        <input
+                                          type="radio"
+                                          id={`suboption-none-${param.id}`}
+                                          name={`${param.name}_suboptions`}
+                                          value=""
+                                          checked={!hasSubOptionSelected}
+                                          onChange={() => {
+                                            // Clear all sub-options when "None" is selected
+                                            selectedOption.subOptions?.forEach(
+                                              (subOption) => {
+                                                updateFormValue(
+                                                  `${param.name}_${subOption.value}`,
+                                                  false
+                                                );
+                                              }
+                                            );
+                                          }}
+                                          className="w-4 h-4 text-primary focus:ring-primary"
+                                        />
+                                        <Label
+                                          htmlFor={`suboption-none-${param.id}`}
+                                          className="text-sm cursor-pointer"
+                                        >
+                                          None (no additional options)
+                                        </Label>
+                                      </div>
+                                    )}
 
                                     {selectedOption.subOptions.map(
                                       (subOption) => (
@@ -3535,36 +3652,50 @@ Check console for complete data structure.`);
                                   </div>
                                 )}
 
+                                {/* Validation message for required sub-options */}
+                                {isSubOptionRequired &&
+                                  !hasSubOptionSelected && (
+                                    <div className="text-xs text-destructive font-medium flex items-center gap-1 mt-2">
+                                      <span className="w-1 h-1 bg-destructive rounded-full"></span>
+                                      Please select an additional option
+                                    </div>
+                                  )}
+
                                 {/* Toggle display for sub-options */}
                                 {subOptionDisplayType === "toggle" && (
-                                  <div className="space-y-2">
-                                    <Button
-                                      variant={
-                                        !selectedOption.subOptions.some(
-                                          (subOption) =>
-                                            formValues[
-                                              `${param.name}_${subOption.value}`
-                                            ]
-                                        )
-                                          ? "default"
-                                          : "outline"
-                                      }
-                                      size="sm"
-                                      onClick={() => {
-                                        // Clear all sub-options when "None" is selected
-                                        selectedOption.subOptions?.forEach(
-                                          (subOption) => {
-                                            updateFormValue(
-                                              `${param.name}_${subOption.value}`,
-                                              false
-                                            );
-                                          }
-                                        );
-                                      }}
-                                      className="mr-2 mb-2"
-                                    >
-                                      None
-                                    </Button>
+                                  <div
+                                    className={`space-y-2 ${
+                                      isSubOptionRequired &&
+                                      !hasSubOptionSelected
+                                        ? "border-2 border-destructive rounded-lg p-2"
+                                        : ""
+                                    }`}
+                                  >
+                                    {/* Add "None" option for sub-options only if not required */}
+                                    {!isSubOptionRequired && (
+                                      <Button
+                                        variant={
+                                          !hasSubOptionSelected
+                                            ? "default"
+                                            : "outline"
+                                        }
+                                        size="sm"
+                                        onClick={() => {
+                                          // Clear all sub-options when "None" is selected
+                                          selectedOption.subOptions?.forEach(
+                                            (subOption) => {
+                                              updateFormValue(
+                                                `${param.name}_${subOption.value}`,
+                                                false
+                                              );
+                                            }
+                                          );
+                                        }}
+                                        className="mr-2 mb-2"
+                                      >
+                                        None
+                                      </Button>
+                                    )}
 
                                     <div className="flex flex-wrap gap-2">
                                       {selectedOption.subOptions.map(
@@ -3643,6 +3774,16 @@ Check console for complete data structure.`);
                                     </div>
                                   </div>
                                 )}
+
+                                {/* Validation message for required sub-options (toggle) */}
+                                {subOptionDisplayType === "toggle" &&
+                                  isSubOptionRequired &&
+                                  !hasSubOptionSelected && (
+                                    <div className="text-xs text-destructive font-medium flex items-center gap-1 mt-2">
+                                      <span className="w-1 h-1 bg-destructive rounded-full"></span>
+                                      Please select an additional option
+                                    </div>
+                                  )}
                               </div>
                             ) : null;
                           })()}
@@ -4237,6 +4378,37 @@ Check console for complete data structure.`);
                 </Card>
               )}
             </div>
+
+            {/* Validation Warnings */}
+            {(() => {
+              const validationErrors = validateRequiredSubOptions();
+              return validationErrors.length > 0 ? (
+                <Card className="border-destructive">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-destructive flex items-center gap-2">
+                      <AlertTriangle className="w-5 h-5" />
+                      Required Selections Missing
+                    </CardTitle>
+                    <CardDescription>
+                      Please complete all required selections to proceed
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {validationErrors.map((error, index) => (
+                        <div
+                          key={index}
+                          className="text-sm text-destructive flex items-center gap-2"
+                        >
+                          <span className="w-1.5 h-1.5 bg-destructive rounded-full"></span>
+                          {error}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ) : null;
+            })()}
 
             <Card>
               <CardHeader>
