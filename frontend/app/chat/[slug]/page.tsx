@@ -142,7 +142,7 @@ export default function ChatInterface() {
     }
     const initializeChat = async () => {
       try {
-        const response = await fetch(`http://localhost:4000/api/ai`, {
+        const response = await fetch(`${process.env.BACKEND_URL}/api/ai`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -404,7 +404,7 @@ export default function ChatInterface() {
         JSON.stringify(conversationHistory)
       );
 
-      const response = await fetch(`http://localhost:4000/api/ai/upload`, {
+      const response = await fetch(`/api/ai/upload`, {
         method: "POST",
 
         body: formData,
@@ -481,7 +481,7 @@ export default function ChatInterface() {
       // Debug: Log conversation history being sent
       console.log("Sending conversation history:", conversationHistory);
 
-      const response = await fetch(`http://localhost:4000/api/ai/chat`, {
+      const response = await fetch(`${process.env.BACKEND_URL}/api/ai/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
