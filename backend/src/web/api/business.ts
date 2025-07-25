@@ -182,6 +182,7 @@ router.get("/products", async (req, res) => {
         currencyType: productsTable.currencyType,
       })
       .from(productsTable)
+      .where(eq(productsTable.businessId, businessId))
       .orderBy(productsTable.createdAt);
 
     res.send({
