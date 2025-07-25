@@ -18,6 +18,7 @@ const app = express();
 
 app.use(express.json());
 app.use((req, res, next) => {
+    if (process.env.NODE_ENV !== "production") res.setHeader("Access-Control-Allow-Origin", "*");
     if (req.path.startsWith("/api/auth/oauth")) return next();
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
