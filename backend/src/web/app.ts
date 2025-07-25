@@ -1,3 +1,4 @@
+import ai from "./api/ai";
 import auth from "./api/auth";
 import business from "./api/business";
 import files from "./api/files";
@@ -16,7 +17,6 @@ declare global {
 
 const app = express();
 
-//set cors
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -30,9 +30,7 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.get("/ping", (_, res) => res.status(200).send("Pong!"));
 app.use((req, res, next) => {
-  if (process.env.NODE_ENV !== "production")
-    res.setHeader("Access-Control-Allow-Origin", "*");
-  if (req.path.startsWith("/api/auth/oauth")) return next();
+  if (req.path.startsWith("/api/auth")) return next();
 
   console.log("Request received:", req.method, req.path, req.headers);
   const authHeader = req.headers["authorization"];
@@ -51,11 +49,11 @@ app.use((req, res, next) => {
   });
 });
 
+app.use("/api/ai", ai);
 app.use("/api/orders", orders);
 app.use("/api/auth", auth);
 app.use("/api/business", business);
 app.use("/api/files", files);
-app.use("/api/ai", require("./api/ai").default);
 app.get("/ping", (_, res) => res.status(200).send("Pong!"));
 
 export default function startServer() {
