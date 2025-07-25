@@ -31,12 +31,12 @@ async function getBusinessData(
     }
 
     const data = await response.json();
-    // console.log("datadata ", data);
+    console.log("datadata ", data);
 
     if (!data) {
       return undefined;
     }
-    return data;
+    return data.business;
   } catch (error) {
     console.error("Error fetching team data:", error);
     return undefined;
@@ -54,7 +54,7 @@ export default async function DashboardLayout({
   if (session && session.backendJwt) {
     // console.log("SESSION ", session);
     const businessData = await getBusinessData(session.backendJwt);
-    // console.log(businessData);
+    console.log(businessData);
     if (businessData) {
       currentBusinessData = businessData;
     }
