@@ -1756,7 +1756,7 @@ export default function QuoteFormBuilder({
         if (param.required && param.type === "FixedOption") {
           const selectedValue = formValues[param.name];
           if (!selectedValue || selectedValue === "") {
-            throw new Error(`${param.label || param.name} is required`);
+            // throw new Error(`${param.label || param.name} is required`);
           }
 
           // Check if the selected option has sub-options and if they are required
@@ -1787,7 +1787,7 @@ export default function QuoteFormBuilder({
             value === "" ||
             value === 0
           ) {
-            throw new Error(`${param.label || param.name} is required`);
+            // throw new Error(`${param.label || param.name} is required`);
           }
         }
       }
