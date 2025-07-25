@@ -249,16 +249,70 @@ router.delete("/product/:productId", (req, res) => {
   }
 });
 
-router.get("/product/:productId", (req, res) => {
+router.get("/product/:productId", async (req, res) => {
   try {
-    // const product = parseInt(req.params.productId);
-    // if (isNaN(product)) return res.status(400).json({ error: "Product ID is required" });
-    // const productItem = db.select().from(usersTable).where(eq(usersTable.id, product));
-    // res.send({
-    //   generatedId: productItem.oid,
-    //   name: productItem.$dynamic.name,
-    // })
-    // db.select()
+    // Check if user is authenticated
+    if (!req.user?.email) {
+      return res
+        .status(401)
+        .json({ error: "User not authenticated or email not found" });
+    }
+
+    const { productId } = req.params;
+    const productIdNum = parseInt(productId);
+
+    if (isNaN(productIdNum)) {
+      return res.status(400).json({ error: "Invalid product ID" });
+    }
+
+    const userEmail = req.user.email;
+
+    // Get user's business first
+    const business = await db
+      .select()
+      .from(businessTable)
+      .where(eq(businessTable.ownerEmail, userEmail))
+      .limit(1);
+
+    if (business.length === 0) {
+      return res.status(404).json({ error: "No business found for this user" });
+    }
+
+    const businessData = business[0]!;
+
+    // Get the specific product by ID
+    const product = await db
+      .select({
+        id: productsTable.id,
+        name: productsTable.name,
+        description: productsTable.description,
+        basePrice: productsTable.basePrice,
+        currencyType: productsTable.currencyType,
+        formData: productsTable.formData,
+        createdAt: productsTable.createdAt,
+        lastModified: productsTable.lastModified,
+      })
+      .from(productsTable)
+      .where(eq(productsTable.id, productIdNum))
+      .limit(1);
+
+    if (product.length === 0) {
+      return res.status(404).json({
+        error: "Product not found",
+      });
+    }
+
+    const productData = product[0]!;
+
+    res.send({
+      product: productData,
+      businessInfo: {
+        id: businessData.id,
+        name: businessData.name,
+        slug: businessData.slug,
+      },
+      message: "Product retrieved successfully",
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "An unexpected error occurred" });
