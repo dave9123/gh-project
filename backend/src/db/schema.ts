@@ -4,6 +4,7 @@ import { integer, pgTable, varchar, timestamp, boolean } from "drizzle-orm/pg-co
 export const usersTable = pgTable("users", {
     id: integer().primaryKey().generatedAlwaysAsIdentity(),
 
+    email: varchar().notNull().unique(),
     provider: varchar().notNull(),
 
     createdAt: timestamp().defaultNow().notNull(),
@@ -25,11 +26,11 @@ export const productsTable = pgTable("products", {
 
 export const businessTable = pgTable("business", {
     id: integer().primaryKey().generatedAlwaysAsIdentity(),
-    
+
     name: varchar().notNull(),
     slug: varchar().notNull(),
     phoneNumber: varchar().notNull(),
-    ownerEmail: varchar().notNull(),
+    ownerEmail: varchar().notNull().references(() => usersTable.email),
 
     createdAt: timestamp().defaultNow().notNull(),
     updatedAt: timestamp().defaultNow().notNull()
