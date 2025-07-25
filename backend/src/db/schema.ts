@@ -6,6 +6,7 @@ import {
   timestamp,
   boolean,
   unique,
+  jsonb,
 } from "drizzle-orm/pg-core";
 
 export const usersTable = pgTable("users", {
