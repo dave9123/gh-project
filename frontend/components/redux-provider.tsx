@@ -1,17 +1,12 @@
 "use client";
 import { PropsWithChildren, useEffect, useRef } from "react";
-// import { Provider } from "react-redux";
-// import { AppStore, makeStore } from "./store";
 import { Session } from "next-auth";
-// import { TeamPermissionState } from "./slices/teamPermissoinSlice";
-import { permission } from "process";
-import { SessionProvider, signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import getBaseURL from "@/lib/getBaseURL";
 import { AppStore, makeStore } from "@/redux/store";
 import { Provider } from "react-redux";
 
-export default function ReduxNextAuthProvider({
+export default function ReduxProvider({
   children,
   initialSession,
 }: PropsWithChildren & {
@@ -47,9 +42,5 @@ export default function ReduxNextAuthProvider({
   //   // eslint-disable-next-line
   // }, []);
 
-  return (
-    <SessionProvider>
-      <Provider store={storeRef.current}>{children} </Provider>
-    </SessionProvider>
-  );
+  return <Provider store={storeRef.current}>{children} </Provider>;
 }
