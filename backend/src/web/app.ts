@@ -17,6 +17,7 @@ import orders from "./api/orders";
 const app = express();
 
 app.use(express.json());
+app.get("/ping", (_, res) => res.status(200).send("Pong!"));
 app.use((req, res, next) => {
     if (process.env.NODE_ENV !== "production") res.setHeader("Access-Control-Allow-Origin", "*");
     if (req.path.startsWith("/api/auth/oauth")) return next();
@@ -39,7 +40,6 @@ app.use("/api/orders", orders);
 app.use("/api/auth", auth);
 app.use("/api/business", business);
 app.use("/api/files", files);
-app.get("/ping", (_, res) => res.status(200).send("Pong!"));
 
 export default function startServer() {
     const port = process.env.PORT || 3000;
