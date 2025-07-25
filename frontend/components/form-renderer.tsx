@@ -1070,7 +1070,10 @@ export default function FormRenderer({
                           id={`form-${param.id}`}
                           value={
                             typeof formValues[param.name] === "number"
-                              ? formValues[param.name].toFixed(2)
+                              ? formValues[param.name] < 0.01 &&
+                                formValues[param.name] > 0
+                                ? formValues[param.name].toFixed(6)
+                                : formValues[param.name].toFixed(2)
                               : formValues[param.name] || "0.00"
                           }
                           disabled
@@ -1153,7 +1156,12 @@ export default function FormRenderer({
                             value={item.amount}
                             format={{
                               minimumFractionDigits: currency === "IDR" ? 0 : 2,
-                              maximumFractionDigits: currency === "IDR" ? 0 : 2,
+                              maximumFractionDigits:
+                                currency === "IDR"
+                                  ? 0
+                                  : item.amount < 0.01 && item.amount > 0
+                                  ? 6
+                                  : 2,
                             }}
                           />
                         </div>
@@ -1181,7 +1189,11 @@ export default function FormRenderer({
                                   minimumFractionDigits:
                                     currency === "IDR" ? 0 : 2,
                                   maximumFractionDigits:
-                                    currency === "IDR" ? 0 : 2,
+                                    currency === "IDR"
+                                      ? 0
+                                      : unitTotal < 0.01 && unitTotal > 0
+                                      ? 6
+                                      : 2,
                                 }}
                               />
                             </span>
@@ -1202,7 +1214,12 @@ export default function FormRenderer({
                           value={totalPrice}
                           format={{
                             minimumFractionDigits: currency === "IDR" ? 0 : 2,
-                            maximumFractionDigits: currency === "IDR" ? 0 : 2,
+                            maximumFractionDigits:
+                              currency === "IDR"
+                                ? 0
+                                : totalPrice < 0.01 && totalPrice > 0
+                                ? 6
+                                : 2,
                           }}
                         />
                       </span>
