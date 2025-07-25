@@ -11,8 +11,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useAppSelector } from "@/redux/hooks";
 
 export default function OnboardingPage() {
+  const user = useAppSelector((state) => state.user);
   const [formData, setFormData] = useState({
     name: "",
     slug: "",
@@ -81,12 +83,31 @@ export default function OnboardingPage() {
     return !Object.values(newErrors).some((error) => error !== "");
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (validateForm()) {
       // Handle form submission here
-      console.log("Form submitted:", formData);
+
+      try {
+        const response = await fetch("/api/business/new", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(
+            Object.assign({}, { ...formData, ownerEmail: user.email })
+          ),
+        });
+        console.log(user);
+        console.log("Response:", response);
+
+        const data = await response.json();
+        console.log("data:", data);
+
+        console.log("Form submitted:", formData);
+      } catch (error) {}
+
       // You can add navigation or API calls here
     }
   };

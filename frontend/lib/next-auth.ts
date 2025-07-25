@@ -27,38 +27,36 @@ export const authOptions: NextAuthOptions = {
 
       try {
         // Call backend to sync user & get JWT
-        // const res = await fetch(
-        //   `${process.env.BACKEND_URL}/api/internal/auth/oauth`,
-        //   {
-        //     method: "POST",
-        //     headers: {
-        //       "Content-Type": "application/json",
-        //       Authorization: "Bearer trytologin",
-        //       ...(process.env.INTERNAL_API_KEY && {
-        //         "X-API-KEY": process.env.INTERNAL_API_KEY,
-        //       }),
-        //     },
-        //     body: JSON.stringify({
-        //       provider: "google",
-        //       providerId: profile.sub,
-        //       name: profile.name,
-        //       email: profile.email,
-        //       image: profile.image,
-        //     }),
-        //   }
-        // );
-        // if (!res.ok) return false;
-        // const response = await res.json();
-        // const { token } = response;
-        // user.backendJwt = token;
+        const res = await fetch(`${process.env.BACKEND_URL}/api/auth/oauth`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: "Bearer trytologin",
+            ...(process.env.INTERNAL_API_KEY && {
+              "X-API-KEY": process.env.INTERNAL_API_KEY,
+            }),
+          },
+          body: JSON.stringify({
+            provider: "google",
+            providerId: profile.sub,
+            name: profile.name,
+            email: profile.email,
+            image: profile.image,
+          }),
+        });
+        if (!res.ok) return false;
+        const response = await res.json();
+        console.log("response", response);
+        const { token } = response;
+        user.backendJwt = token;
         // user.role = response.user.role;
-        // cookieStore.set("x-backend-jwt", token, {
-        //   httpOnly: true,
-        //   path: "/",
-        //   maxAge: 60 * 60 * 24 * 7, // 1 week
-        //   sameSite: "lax", // or 'strict'
-        //   secure: process.env.NODE_ENV === "production",
-        // });
+        cookieStore.set("x-backend-jwt", token, {
+          httpOnly: true,
+          path: "/",
+          maxAge: 60 * 60 * 24 * 7, // 1 week
+          sameSite: "lax", // or 'strict'
+          secure: process.env.NODE_ENV === "production",
+        });
       } catch (error) {
         console.log(`an Error occured! ${error}`);
         return false;
