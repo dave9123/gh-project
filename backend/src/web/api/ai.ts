@@ -335,7 +335,7 @@ async function executeFunction(functionName: string, args: any) {
 
 export async function chatWithAI(messages: Array<any>, tools = aiFunctions) {
   const completion = await openai.chat.completions.create({
-    model: "gpt-4",
+    model: "mistralai/mistral-small-3.2-24b-instruct:free",
     messages: messages as any,
     tools: tools as any,
     tool_choice: "auto",
@@ -379,7 +379,7 @@ router.get("/", async (req, res) => {
     const products = await db
       .select()
       .from(productsTable)
-      .where(eq(productsTable.business, parseInt(businessId as string, 10)));
+      .where(eq(productsTable.businessId, parseInt(businessId as string, 10)));
 
     const categories = products.map((product: any) => product.name);
 
@@ -413,13 +413,31 @@ router.post("/chat", async (req, res) => {
         .json({ error: "Message and businessId are required" });
     }
 
-    // Fetch products for this business
-    const products = await db
-      .select()
-      .from(productsTable)
-      .where(eq(productsTable.business, parseInt(businessId as string, 10)));
+    // // Fetch products for this business
+    // const products = await db
+    //   .select()
+    //   .from(productsTable)
+    //   .where(eq(productsTable.businessId, parseInt(businessId as string, 10)));
+    // Use this mock data first
+    const products = [
+      {
+        id: "param_quantity_1753396120178",
+        name: "quantity",
+        label: "Quantity",
+        type: "NumericValue",
+        required: true,
+        min: 1,
+        step: 1,
+        unit: "units",
+        pricing: {},
+        hasSubParameters: false,
+        pricingScope: "per_unit",
+      },
+    ];
 
-    const categories = products.map((product: any) => product.name);
+    const categories = products.map(
+      (product: any) => product.label || product.name
+    );
 
     // Create initial message for AI
     const messages = [
