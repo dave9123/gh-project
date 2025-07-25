@@ -4,7 +4,7 @@ import {
   pgTable,
   varchar,
   timestamp,
-  boolean,
+  boolean, unique,
 } from "drizzle-orm/pg-core";
 
 export const usersTable = pgTable("users", {
@@ -33,13 +33,35 @@ export const productsTable = pgTable("products", {
 export const businessTable = pgTable("business", {
   id: integer().primaryKey().generatedAlwaysAsIdentity(),
 
-  name: varchar().notNull(),
-  slug: varchar().notNull(),
-  phoneNumber: varchar().notNull(),
-  ownerEmail: varchar()
-    .notNull()
-    .references(() => usersTable.email),
+    name: varchar().notNull(),
+    slug: varchar().notNull(),
+    phoneNumber: varchar().notNull(),
+    ownerEmail: varchar().notNull().references(() => usersTable.email),
 
   createdAt: timestamp().defaultNow().notNull(),
   updatedAt: timestamp().defaultNow().notNull(),
+}, (table) => {
+    return {
+        slugUnique: unique('slug').on(table.slug),
+    }
+});
+
+export const ordersTable = pgTable("orders", {
+    id: integer().primaryKey().generatedAlwaysAsIdentity(),
+
+    name: varchar().notNull(),
+    description: varchar().default("").notNull(),
+    currency: varchar().default("IDR").notNull(),
+    status: varchar().default("pending").notNull(),
+
+    userId: integer().notNull().references(() => usersTable.id),
+    businessId: integer().notNull().references(() => businessTable.id),
+    productId: integer().notNull().references(() => productsTable.id),
+    fileId: integer().notNull(),
+
+    quantity: integer().notNull(),
+    totalPrice: integer().notNull(),
+
+    createdAt: timestamp().defaultNow().notNull(),
+    updatedAt: timestamp().defaultNow().notNull()
 });
