@@ -61,25 +61,25 @@ router.get("/get", async (req, res) => {
     }
 });
 
-router.post("/product", (req, res) => {
+router.post("/product", async (req, res) => {
     try {
         if (!req.body?.name || !req.body?.description || !req.body?.basePrice || !req.body?.currencyType) return res.status(400).json({ error: "All fields are required" });
         const { name, description, basePrice, currencyType } = req.body;
 
-        db.insert(productsTable).values({
+        const result = await db.insert(productsTable).values({
             name,
             description,
             basePrice,
             currencyType,
-        }).then((result => {
-            res.send({
-                generatedId: result.oid as number,
-                name,
-                description,
-                currencyType,
-                basePrice,
-            });
-        }));
+        }).returning({ insertId: productsTable.id });
+
+        res.send({
+            generatedId: result && result[0] ? result[0].insertId : 0,
+            name,
+            description,
+            currencyType,
+            basePrice,
+        });
     } catch (error) {
         console.error(error);
         return res.status(500).json({ error: "An unexpected error occurred" });
