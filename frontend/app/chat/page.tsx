@@ -16,6 +16,7 @@ import {
   Share2,
   ThumbsUp,
   ThumbsDown,
+  Paperclip,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,6 +56,24 @@ interface StreamingWord {
   text: string;
 }
 
+interface FileUpload {
+  id: string;
+  originalName: string;
+  url: string;
+  mimeType: string;
+  size: number;
+  isImage: boolean;
+  isDocument: boolean;
+}
+
+interface AIResponse {
+  success: boolean;
+  response?: string;
+  availableProducts?: string[];
+  businessId?: string;
+  error?: string;
+}
+
 // Faster word delay for smoother streaming
 const WORD_DELAY = 40; // ms per word
 const CHUNK_SIZE = 2; // Number of words to add at once
@@ -83,6 +102,10 @@ export default function ChatInterface() {
   const inputContainerRef = useRef<HTMLDivElement>(null);
   const shouldFocusAfterStreamingRef = useRef(false);
   const mainContainerRef = useRef<HTMLDivElement>(null);
+  const [businessId, setBusinessId] = useState<string>("1"); // Default business ID
+  const [uploadedFiles, setUploadedFiles] = useState<FileUpload[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   // Store selection state
   const selectionStateRef = useRef<{
     start: number | null;
@@ -128,6 +151,21 @@ export default function ChatInterface() {
       window.removeEventListener("resize", checkMobileAndViewport);
     };
   }, [isMobile, viewportHeight]);
+
+  // Initialize with welcome message
+  useEffect(() => {
+    if (messages.length === 0) {
+      const welcomeMessage: Message = {
+        id: "welcome",
+        content:
+          "Hello! I'm your printing service AI assistant. I can help you with quotes, product information, file uploads, and general questions about our printing services. What can I help you with today?",
+        type: "system",
+        completed: true,
+      };
+      setMessages([welcomeMessage]);
+      setCompletedMessages(new Set(["welcome"]));
+    }
+  }, []);
 
   // Organize messages into sections
   useEffect(() => {
@@ -281,6 +319,102 @@ export default function ChatInterface() {
     });
   };
 
+  // File upload function
+  const handleFileUpload = async (file: File) => {
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("businessId", businessId);
+      formData.append("chatId", "general");
+      formData.append("userId", "user-1"); // You can get this from auth context
+
+      const response = await fetch(`http://localhost:4000/api/ai/upload`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImFAYS5jb20iLCJpYXQiOjE3NTM0MDg5NDh9.Pk7W7YSmJSY8maYxDaZIIuQdVGNfMNTtnJFieVDAfBQ`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Upload failed");
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        const newFile: FileUpload = {
+          id: result.file.id,
+          originalName: result.file.originalName,
+          url: result.file.url,
+          mimeType: result.file.mimeType,
+          size: result.file.size,
+          isImage: result.file.isImage,
+          isDocument: result.file.isDocument,
+        };
+
+        setUploadedFiles((prev) => [...prev, newFile]);
+
+        // Add a message about the uploaded file
+        const fileMessage = {
+          id: `file-${Date.now()}`,
+          content: `📎 Uploaded: ${file.name} (${(
+            file.size /
+            1024 /
+            1024
+          ).toFixed(2)} MB)`,
+          type: "user" as MessageType,
+          newSection: messages.length > 0,
+        };
+
+        setMessages((prev) => [...prev, fileMessage]);
+
+        return result.file;
+      } else {
+        throw new Error(result.error || "Upload failed");
+      }
+    } catch (error) {
+      console.error("File upload error:", error);
+      alert("Failed to upload file. Please try again.");
+      return null;
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // Real AI API call
+  const callAIAPI = async (userMessage: string): Promise<string> => {
+    try {
+      const response = await fetch(`http://localhost:4000/api/ai/chat`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImFAYS5jb20iLCJpYXQiOjE3NTM0MDg5NDh9.Pk7W7YSmJSY8maYxDaZIIuQdVGNfMNTtnJFieVDAfBQ`,
+        },
+        body: JSON.stringify({
+          message: userMessage,
+          businessId: businessId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const result: AIResponse = await response.json();
+
+      if (result.success && result.response) {
+        return result.response;
+      } else {
+        throw new Error(result.error || "No response from AI");
+      }
+    } catch (error) {
+      console.error("AI API call error:", error);
+      return "I apologize, but I'm having trouble connecting to the AI service right now. Please try again in a moment.";
+    }
+  };
+
   const getAIResponse = (userMessage: string) => {
     const responses = [
       `That's an interesting perspective. Let me elaborate on that a bit further. When we consider the implications of what you've shared, several key points come to mind. First, it's important to understand the context and how it relates to broader concepts. This allows us to develop a more comprehensive understanding of the situation. Would you like me to explore any specific aspect of this in more detail?`,
@@ -369,21 +503,7 @@ export default function ChatInterface() {
   };
 
   const simulateAIResponse = async (userMessage: string) => {
-    // Randomly choose between text and card response
-    const useCards = Math.random() > 0.5;
-
-    let response: string;
-    let cards: Card[] | undefined;
-
-    if (useCards) {
-      const cardResponse = getAICardResponse(userMessage);
-      response = cardResponse.text;
-      cards = cardResponse.cards;
-    } else {
-      response = getAIResponse(userMessage);
-    }
-
-    // Create a new message with empty content
+    // Create a new message with empty content first
     const messageId = Date.now().toString();
     setStreamingMessageId(messageId);
 
@@ -393,33 +513,57 @@ export default function ChatInterface() {
         id: messageId,
         content: "",
         type: "system",
-        cards: cards,
       },
     ]);
 
     // Add a delay before the second vibration
     setTimeout(() => {
       // Add vibration when streaming begins
-      navigator.vibrate(50);
-    }, 200); // 200ms delay to make it distinct from the first vibration
+      if (navigator.vibrate) {
+        navigator.vibrate(50);
+      }
+    }, 200);
 
-    // Stream the text
-    await simulateTextStreaming(response);
+    try {
+      // Call the real AI API
+      const response = await callAIAPI(userMessage);
 
-    // Update with complete message
-    setMessages((prev) =>
-      prev.map((msg) =>
-        msg.id === messageId
-          ? { ...msg, content: response, completed: true }
-          : msg
-      )
-    );
+      // Stream the text
+      await simulateTextStreaming(response);
 
-    // Add to completed messages set to prevent re-animation
-    setCompletedMessages((prev) => new Set(prev).add(messageId));
+      // Update with complete message
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, content: response, completed: true }
+            : msg
+        )
+      );
 
-    // Add vibration when streaming ends
-    navigator.vibrate(50);
+      // Add to completed messages set to prevent re-animation
+      setCompletedMessages((prev) => new Set(prev).add(messageId));
+
+      // Add vibration when streaming ends
+      if (navigator.vibrate) {
+        navigator.vibrate(50);
+      }
+    } catch (error) {
+      console.error("Error getting AI response:", error);
+
+      // Update with error message
+      const errorMessage =
+        "I apologize, but I encountered an error. Please try again.";
+
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === messageId
+            ? { ...msg, content: errorMessage, completed: true }
+            : msg
+        )
+      );
+
+      setCompletedMessages((prev) => new Set(prev).add(messageId));
+    }
 
     // Reset streaming state
     setStreamingWords([]);
@@ -451,9 +595,11 @@ export default function ChatInterface() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (inputValue.trim() && !isStreaming) {
+    if (inputValue.trim() && !isStreaming && !isUploading) {
       // Add vibration when message is submitted
-      navigator.vibrate(50);
+      if (navigator.vibrate) {
+        navigator.vibrate(50);
+      }
 
       const userMessage = inputValue.trim();
 
@@ -491,6 +637,19 @@ export default function ChatInterface() {
 
       // Start AI response
       simulateAIResponse(userMessage);
+    }
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileUpload(file);
+    }
+  };
+
+  const triggerFileUpload = () => {
+    if (!isStreaming && !isUploading) {
+      fileInputRef.current?.click();
     }
   };
 
@@ -644,7 +803,9 @@ export default function ChatInterface() {
             <span className="sr-only">Menu</span>
           </Button>
 
-          <h1 className="text-base font-medium text-gray-800">v0 Chat</h1>
+          <h1 className="text-base font-medium text-gray-800">
+            Printing AI Assistant
+          </h1>
 
           <Button variant="ghost" size="icon" className="rounded-full h-8 w-8">
             <PenSquare className="h-5 w-5 text-gray-700" />
@@ -694,11 +855,20 @@ export default function ChatInterface() {
 
       <div className="fixed bottom-0 left-0 right-0 p-4 bg-gray-50">
         <form onSubmit={handleSubmit} className="max-w-3xl mx-auto">
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="hidden"
+            accept="image/*,.pdf,.txt,.csv,.json,.doc,.docx,.xls,.xlsx"
+            onChange={handleFileInputChange}
+          />
+
           <div
             ref={inputContainerRef}
             className={cn(
               "relative w-full rounded-3xl border border-gray-200 bg-white p-3 cursor-text",
-              isStreaming && "opacity-80"
+              (isStreaming || isUploading) && "opacity-80"
             )}
             onClick={handleInputContainerClick}
           >
@@ -706,12 +876,17 @@ export default function ChatInterface() {
               <Textarea
                 ref={textareaRef}
                 placeholder={
-                  isStreaming ? "Waiting for response..." : "Ask Anything"
+                  isStreaming
+                    ? "Waiting for response..."
+                    : isUploading
+                    ? "Uploading file..."
+                    : "Ask about printing services..."
                 }
                 className="min-h-[24px] max-h-[160px] w-full rounded-3xl border-0 bg-transparent text-gray-900 placeholder:text-gray-400 placeholder:text-base focus-visible:ring-0 focus-visible:ring-offset-0 text-base pl-2 pr-4 pt-0 pb-0 resize-none overflow-y-auto leading-tight"
                 value={inputValue}
                 onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
+                disabled={isStreaming || isUploading}
                 onFocus={() => {
                   // Ensure the textarea is scrolled into view when focused
                   if (textareaRef.current) {
@@ -735,16 +910,17 @@ export default function ChatInterface() {
                       "rounded-full h-8 w-8 flex-shrink-0 border-gray-200 p-0 transition-colors",
                       activeButton === "add" && "bg-gray-100 border-gray-300"
                     )}
-                    onClick={() => toggleButton("add")}
-                    disabled={isStreaming}
+                    onClick={triggerFileUpload}
+                    disabled={isStreaming || isUploading}
                   >
-                    <Plus
+                    <Paperclip
                       className={cn(
                         "h-4 w-4 text-gray-500",
+                        isUploading && "animate-spin",
                         activeButton === "add" && "text-gray-700"
                       )}
                     />
-                    <span className="sr-only">Add</span>
+                    <span className="sr-only">Upload File</span>
                   </Button>
 
                   <Button
@@ -756,7 +932,7 @@ export default function ChatInterface() {
                         "bg-gray-100 border-gray-300"
                     )}
                     onClick={() => toggleButton("deepSearch")}
-                    disabled={isStreaming}
+                    disabled={isStreaming || isUploading}
                   >
                     <Search
                       className={cn(
@@ -782,7 +958,7 @@ export default function ChatInterface() {
                       activeButton === "think" && "bg-gray-100 border-gray-300"
                     )}
                     onClick={() => toggleButton("think")}
-                    disabled={isStreaming}
+                    disabled={isStreaming || isUploading}
                   >
                     <Lightbulb
                       className={cn(
@@ -809,7 +985,7 @@ export default function ChatInterface() {
                     "rounded-full h-8 w-8 border-0 flex-shrink-0 transition-all duration-200",
                     hasTyped ? "bg-black scale-110" : "bg-gray-200"
                   )}
-                  disabled={!inputValue.trim() || isStreaming}
+                  disabled={!inputValue.trim() || isStreaming || isUploading}
                 >
                   <ArrowUp
                     className={cn(
