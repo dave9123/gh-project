@@ -23,15 +23,15 @@ async function getBusinessData(
       }
     );
 
-    console.log("responseresponse ");
+    // console.log("responseresponse ");
     if (!response.ok) {
-      console.log("HEYYYA ");
+      // console.log("HEYYYA ");
 
       return undefined;
     }
 
     const data = await response.json();
-    console.log("datadata ", data);
+    // console.log("datadata ", data);
 
     if (!data) {
       return undefined;

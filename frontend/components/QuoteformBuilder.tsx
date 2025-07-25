@@ -56,6 +56,7 @@ import type {
   FixedOption,
   SubOption,
 } from "@/lib/formBuilderTypes";
+import type { ProductTypes } from "@/lib/product.d";
 
 type CurrencyType = "USD" | "IDR";
 
@@ -124,6 +125,10 @@ interface SaveResponse {
   message: string;
   data?: FormBuilderData;
   error?: string;
+}
+
+interface QuoteFormBuilderProps {
+  product?: ProductTypes;
 }
 
 // Safe expression evaluator for basic math operations
@@ -763,6 +768,11 @@ const currencies: Record<CurrencyType, CurrencyConfig> = {
   },
 };
 
+// Helper function to safely get currency symbol
+const getCurrencySymbol = (currency: CurrencyType): string => {
+  return currencies[currency]?.symbol || "$"; // Fallback to $ if currency not found
+};
+
 // Default file type mapping
 const defaultFileTypeMap: { [key: string]: string[] } = {
   pdf: [".pdf"],
@@ -771,7 +781,9 @@ const defaultFileTypeMap: { [key: string]: string[] } = {
   documents: [".doc", ".docx", ".txt"],
 };
 
-export default function QuoteFormBuilder() {
+export default function QuoteFormBuilder({
+  product,
+}: QuoteFormBuilderProps = {}) {
   const [parameters, setParameters] = useState<Parameter[]>([]);
   const [activeTab, setActiveTab] = useState("builder");
   const [formValues, setFormValues] = useState<FormValues>({ quantity: "1" });
@@ -804,6 +816,101 @@ export default function QuoteFormBuilder() {
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
+
+  // Initialize form data from product props
+  useEffect(() => {
+    if (product) {
+      // Always set basic product info from ProductTypes
+      setFormName(product.name);
+      setFormDescription(product.description);
+
+      // Initialize with default values
+      let parsedFormData: Partial<FormBuilderData> = {
+        parameters: [],
+        currency:
+          product.currencyType === "USD" || product.currencyType === "IDR"
+            ? product.currencyType
+            : "USD", // Fallback to USD for unsupported currencies
+        fileConnections: [],
+        selectedFileType: "pdf",
+        fileTypeMap: defaultFileTypeMap["pdf"],
+        formValues: { quantity: "1" },
+      };
+
+      // Try to parse formData if it exists and is not empty
+      if (product.formData && product.formData.trim() !== "") {
+        try {
+          const parsed: Partial<FormBuilderData> = JSON.parse(product.formData);
+
+          // Merge parsed data with defaults, keeping defaults for missing fields
+          parsedFormData = {
+            parameters: parsed.parameters || [],
+            currency:
+              parsed.currency === "USD" || parsed.currency === "IDR"
+                ? parsed.currency
+                : product.currencyType === "USD" ||
+                  product.currencyType === "IDR"
+                ? product.currencyType
+                : "USD", // Fallback chain with validation
+            fileConnections: parsed.fileConnections || [],
+            selectedFileType: parsed.selectedFileType || "pdf",
+            fileTypeMap:
+              parsed.fileTypeMap ||
+              defaultFileTypeMap[parsed.selectedFileType || "pdf"],
+            formValues: parsed.formValues || { quantity: "1" },
+          };
+
+          console.log("Successfully parsed product formData");
+        } catch (error) {
+          console.warn(
+            "Failed to parse product formData, using defaults:",
+            error
+          );
+          // parsedFormData already contains defaults, so we continue with those
+        }
+      } else {
+        console.log("Product formData is empty or null, using default values");
+      }
+
+      // Apply the parsed/default form data to component state
+      if (parsedFormData.parameters) {
+        setParameters(parsedFormData.parameters);
+      }
+      if (parsedFormData.currency) {
+        setSelectedCurrency(parsedFormData.currency);
+      }
+      if (parsedFormData.fileConnections) {
+        setFileConnections(parsedFormData.fileConnections);
+      }
+      if (parsedFormData.selectedFileType) {
+        setSelectedFileType(parsedFormData.selectedFileType);
+      }
+      if (parsedFormData.fileTypeMap) {
+        setFileTypeMap(parsedFormData.fileTypeMap);
+      }
+      if (parsedFormData.formValues) {
+        setFormValues(parsedFormData.formValues);
+      }
+
+      // Set as saved data for change tracking
+      setLastSavedData({
+        id: product.id,
+        name: product.name,
+        description: product.description,
+        parameters: parsedFormData.parameters || [],
+        currency: parsedFormData.currency || "USD",
+        fileConnections: parsedFormData.fileConnections || [],
+        selectedFileType: parsedFormData.selectedFileType || "pdf",
+        fileTypeMap: parsedFormData.fileTypeMap || defaultFileTypeMap["pdf"],
+        formValues: parsedFormData.formValues || { quantity: "1" },
+        createdAt: new Date(product.createdAt).toISOString(),
+        updatedAt: new Date(product.lastModified).toISOString(),
+      });
+
+      setHasUnsavedChanges(false);
+      setSaveStatus("saved");
+    }
+  }, [product]);
 
   const addParameter = () => {
     const newParam: Parameter = {
@@ -1613,7 +1720,7 @@ export default function QuoteFormBuilder() {
     );
   };
 
-  const saveFormData = async (): Promise<SaveResponse> => {
+  const saveFormData = async (): Promise<SaveResponse | undefined> => {
     try {
       setIsSaving(true);
       setSaveStatus("saving");
@@ -1687,11 +1794,30 @@ export default function QuoteFormBuilder() {
       // PUT /api/products/:id - Update existing product
       // GET /api/products/:id - Load product configuration by ID
       //
-      // Request body should match FormBuilderData interface
-      // Response should match SaveResponse interface
+      // Transform FormBuilderData to ProductTypes format
+      const productData: Partial<ProductTypes> = {
+        id: formData.id,
+        name: formData.name,
+        description: formData.description || "",
+        basePrice: 0, // You may want to calculate this from parameters
+        currencyType: formData.currency,
+        formData: JSON.stringify({
+          parameters: formData.parameters,
+          currency: formData.currency,
+          fileConnections: formData.fileConnections,
+          selectedFileType: formData.selectedFileType,
+          fileTypeMap: formData.fileTypeMap,
+          formValues: formData.formValues,
+        }),
+        createdAt: formData.createdAt
+          ? new Date(formData.createdAt).getTime()
+          : Date.now(),
+        lastModified: Date.now(),
+      };
+
       const endpoint = formData.id
-        ? `/api/products/${formData.id}`
-        : "/api/products";
+        ? `/api/business/product/${formData.id}`
+        : "/api/business/product";
       const method = formData.id ? "PUT" : "POST";
 
       const response = await fetch(endpoint, {
@@ -1699,7 +1825,7 @@ export default function QuoteFormBuilder() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(productData),
       });
 
       if (!response.ok) {
@@ -1709,10 +1835,31 @@ export default function QuoteFormBuilder() {
         );
       }
 
-      const result: SaveResponse = await response.json();
+      // Expect ProductTypes response from API
+      const responseData: { product: ProductTypes } = await response.json();
 
-      if (result.success && result.data) {
-        setLastSavedData(result.data);
+      const productResult: ProductTypes = responseData.product;
+
+      if (productResult.id) {
+        // Transform ProductTypes back to FormBuilderData format
+        const parsedFormData = JSON.parse(productResult.formData);
+        const transformedData: FormBuilderData = {
+          id: productResult.id,
+          name: productResult.name,
+          description: productResult.description,
+          parameters: parsedFormData.parameters || [],
+          currency: productResult.currencyType as CurrencyType,
+          fileConnections: parsedFormData.fileConnections || [],
+          selectedFileType: parsedFormData.selectedFileType || "pdf",
+          fileTypeMap:
+            parsedFormData.fileTypeMap ||
+            defaultFileTypeMap[parsedFormData.selectedFileType || "pdf"],
+          formValues: parsedFormData.formValues || { quantity: "1" },
+          createdAt: new Date(productResult.createdAt).toISOString(),
+          updatedAt: new Date(productResult.lastModified).toISOString(),
+        };
+
+        setLastSavedData(transformedData);
         setHasUnsavedChanges(false);
         setSaveStatus("saved");
 
@@ -1721,9 +1868,13 @@ export default function QuoteFormBuilder() {
           setSaveStatus("idle");
         }, 3000);
 
-        return result;
+        return {
+          success: true,
+          message: "Product saved successfully",
+          data: transformedData,
+        };
       } else {
-        throw new Error(result.message || "Save failed");
+        // throw new Error("Save failed - no product ID returned");
       }
     } catch (error) {
       setSaveStatus("error");
@@ -1748,13 +1899,15 @@ export default function QuoteFormBuilder() {
   const handleSave = async () => {
     const result = await saveFormData();
 
-    if (!result.success) {
-      console.error("Save failed:", result.error);
-      // You could show a toast notification here
-      alert(`Save failed: ${result.error}`);
-    } else {
-      console.log("Save successful:", result.message);
-      // You could show a success toast notification here
+    if (result) {
+      if (!result.success) {
+        console.error("Save failed:", result.error);
+        // You could show a toast notification here
+        alert(`Save failed: ${result.error}`);
+      } else {
+        console.log("Save successful:", result.message);
+        // You could show a success toast notification here
+      }
     }
   };
 
@@ -1763,7 +1916,7 @@ export default function QuoteFormBuilder() {
       setIsSaving(true);
       setSaveStatus("saving");
 
-      const response = await fetch(`/api/forms/${formId}`, {
+      const response = await fetch(`/api/products/${formId}`, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -1777,19 +1930,41 @@ export default function QuoteFormBuilder() {
         );
       }
 
-      const result: SaveResponse = await response.json();
+      // Expect ProductTypes response from API
+      const productResult: ProductTypes = await response.json();
 
-      if (result.success && result.data) {
+      if (productResult.id) {
+        // Transform ProductTypes back to FormBuilderData format
+        const parsedFormData = JSON.parse(productResult.formData);
+        const transformedData: FormBuilderData = {
+          id: productResult.id,
+          name: productResult.name,
+          description: productResult.description,
+          parameters: parsedFormData.parameters || [],
+          currency: productResult.currencyType as CurrencyType,
+          fileConnections: parsedFormData.fileConnections || [],
+          selectedFileType: parsedFormData.selectedFileType || "pdf",
+          fileTypeMap:
+            parsedFormData.fileTypeMap ||
+            defaultFileTypeMap[parsedFormData.selectedFileType || "pdf"],
+          formValues: parsedFormData.formValues || { quantity: "1" },
+          createdAt: new Date(productResult.createdAt).toISOString(),
+          updatedAt: new Date(productResult.lastModified).toISOString(),
+        };
+
         // Load the data into state
-        setFormName(result.data.name);
-        setFormDescription(result.data.description || "");
-        setParameters(result.data.parameters);
-        setSelectedCurrency(result.data.currency);
-        setFileConnections(result.data.fileConnections);
-        setSelectedFileType(result.data.selectedFileType || "pdf");
-        setFileTypeMap(defaultFileTypeMap[selectedFileType || "pdf"]);
-        setFormValues(result.data.formValues);
-        setLastSavedData(result.data);
+        setFormName(transformedData.name);
+        setFormDescription(transformedData.description || "");
+        setParameters(transformedData.parameters);
+        setSelectedCurrency(transformedData.currency);
+        setFileConnections(transformedData.fileConnections);
+        setSelectedFileType(transformedData.selectedFileType || "pdf");
+        setFileTypeMap(
+          transformedData.fileTypeMap ||
+            defaultFileTypeMap[transformedData.selectedFileType || "pdf"]
+        );
+        setFormValues(transformedData.formValues);
+        setLastSavedData(transformedData);
         setHasUnsavedChanges(false);
         setSaveStatus("saved");
 
@@ -1798,9 +1973,13 @@ export default function QuoteFormBuilder() {
           setSaveStatus("idle");
         }, 3000);
 
-        return result;
+        return {
+          success: true,
+          message: "Product loaded successfully",
+          data: transformedData,
+        };
       } else {
-        throw new Error(result.message || "Load failed");
+        throw new Error("Load failed - no product found");
       }
     } catch (error) {
       setSaveStatus("error");

@@ -183,8 +183,8 @@ export default function DashboardDefaultPage() {
                           <SelectValue placeholder="Currency" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="usd">USD</SelectItem>
-                          <SelectItem value="idr">IDR</SelectItem>
+                          <SelectItem value="USD">USD</SelectItem>
+                          <SelectItem value="IDR">IDR</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -236,7 +236,7 @@ export default function DashboardDefaultPage() {
                         </div>
                       </DialogContent>
                     </Dialog> */}
-                    <Link href={`/dashboard/products/${item.id}`}>
+                    <Link href={`/dashboard/product/${item.id}`}>
                       <Button variant="outline" className="ml-0">
                         Edit
                       </Button>
