@@ -1,11 +1,15 @@
 import express from "express";
 import db from "../../modules/db";
-import { ordersTable } from "../../db/schema";
+import { ordersTable, usersTable } from "../../db/schema";
+import { eq } from "drizzle-orm";
 const router = express.Router();
 
 router.post("/", async (req, res) => {
     try {
-        const { businessId, fileId, name, userId, productId, quantity, price, currency, total, status } = req.body;
+        const { businessId, fileId, name, productId, quantity, currency, total, status } = req.body;
+        const userResult = await db.select().from(usersTable).where(eq(usersTable.email, req.user.email));
+        const userId = userResult[0]?.id;
+        if (!userId) return res.status(404).json({ error: "User not found" });
 
         await db.insert(ordersTable).values({
             businessId,
@@ -26,9 +30,14 @@ router.post("/", async (req, res) => {
     }
 });
 
-router.get("/", (req, res) => {
+router.get("/", async (req, res) => {
     try {
+        const userResult = await db.select().from(usersTable).where(eq(usersTable.email, req.user.email));
+        const userId = userResult[0]?.id;
+        if (!userId) return res.status(404).json({ error: "User not found" });
+        const orders = await db.select().from(ordersTable).where(eq(ordersTable.userId, userId));
 
+        res.status(200).json(orders);
     } catch (error) {
         console.error(error);
         res.status(500).json({ error: "Internal server error" });
