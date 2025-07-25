@@ -47,6 +47,7 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { printingSamples } from "@/lib/printingSamples";
 import NumberFlow from "@number-flow/react";
+import FormRenderer from "@/components/form-renderer";
 import type {
   InputDisplayType,
   Parameter,
@@ -111,6 +112,8 @@ interface FormBuilderData {
   parameters: Parameter[];
   currency: CurrencyType;
   fileConnections: FileUploadConnection[];
+  selectedFileType?: string;
+  fileTypeMap?: string[];
   formValues: FormValues;
   createdAt?: string;
   updatedAt?: string;
@@ -751,6 +754,14 @@ const currencies: Record<CurrencyType, CurrencyConfig> = {
   },
 };
 
+// Default file type mapping
+const defaultFileTypeMap: { [key: string]: string[] } = {
+  pdf: [".pdf"],
+  images: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"],
+  "3d": [".stl", ".obj", ".ply", ".3mf", ".amf", ".gcode"],
+  documents: [".doc", ".docx", ".txt"],
+};
+
 export default function QuoteFormBuilder() {
   const [parameters, setParameters] = useState<Parameter[]>([]);
   const [activeTab, setActiveTab] = useState("builder");
@@ -770,6 +781,7 @@ export default function QuoteFormBuilder() {
   >([]);
   const [showFileUpload, setShowFileUpload] = useState(false);
   const [selectedFileType, setSelectedFileType] = useState<string>("pdf");
+  const [fileTypeMap, setFileTypeMap] = useState<string[]>([]);
   const [selectedCurrency, setSelectedCurrency] = useState<CurrencyType>("USD");
 
   // Save functionality state
@@ -1535,14 +1547,7 @@ export default function QuoteFormBuilder() {
 
   // Generate file accept attribute based on selected file type
   const getFileAcceptString = () => {
-    const fileTypeMap: { [key: string]: string[] } = {
-      pdf: [".pdf"],
-      images: [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"],
-      "3d": [".stl", ".obj", ".ply", ".3mf", ".amf", ".gcode"],
-      documents: [".doc", ".docx", ".txt"],
-    };
-
-    return fileTypeMap[selectedFileType]?.join(",") || "";
+    return defaultFileTypeMap[selectedFileType]?.join(",") || "";
   };
 
   // Set file type selection (only one at a time)
@@ -1563,6 +1568,8 @@ export default function QuoteFormBuilder() {
       parameters: parameters,
       currency: selectedCurrency,
       fileConnections: fileConnections,
+      selectedFileType: selectedFileType,
+      fileTypeMap: defaultFileTypeMap[selectedFileType],
       formValues: formValues,
       createdAt: lastSavedData?.createdAt,
       updatedAt: new Date().toISOString(),
@@ -1579,10 +1586,13 @@ export default function QuoteFormBuilder() {
       lastSavedData.name !== currentData.name ||
       lastSavedData.description !== currentData.description ||
       lastSavedData.currency !== currentData.currency ||
+      lastSavedData.selectedFileType !== currentData.selectedFileType ||
       JSON.stringify(lastSavedData.parameters) !==
         JSON.stringify(currentData.parameters) ||
       JSON.stringify(lastSavedData.fileConnections) !==
-        JSON.stringify(currentData.fileConnections)
+        JSON.stringify(currentData.fileConnections) ||
+      JSON.stringify(lastSavedData.fileTypeMap) !==
+        JSON.stringify(currentData.fileTypeMap)
     );
   };
 
@@ -1759,6 +1769,8 @@ export default function QuoteFormBuilder() {
         setParameters(result.data.parameters);
         setSelectedCurrency(result.data.currency);
         setFileConnections(result.data.fileConnections);
+        setSelectedFileType(result.data.selectedFileType || "pdf");
+        setFileTypeMap(defaultFileTypeMap[selectedFileType || "pdf"]);
         setFormValues(result.data.formValues);
         setLastSavedData(result.data);
         setHasUnsavedChanges(false);
@@ -1827,6 +1839,8 @@ export default function QuoteFormBuilder() {
     setUploadedFile(null);
     setFileMetadata(null);
     setSelectedCurrency("USD");
+    setSelectedFileType("pdf");
+    setFileTypeMap(defaultFileTypeMap["pdf"]);
     setLastSavedData(null);
     setHasUnsavedChanges(false);
     setSaveStatus("idle");
@@ -1907,6 +1921,10 @@ Check console for complete data structure.`);
       setParameters(importedData.parameters);
       setSelectedCurrency(importedData.currency || "USD");
       setFileConnections(importedData.fileConnections || []);
+      setSelectedFileType(importedData.selectedFileType || "pdf");
+      setFileTypeMap(
+        defaultFileTypeMap[importedData.selectedFileType || "pdf"]
+      );
       setFormValues(importedData.formValues || { quantity: "1" });
       setLastSavedData(null); // Reset save state since this is imported
       setHasUnsavedChanges(true); // Mark as changed since it's imported
@@ -1939,6 +1957,7 @@ Check console for complete data structure.`);
     parameters,
     selectedCurrency,
     fileConnections,
+    selectedFileType,
     formName,
     formDescription,
   ]);
@@ -1955,8 +1974,6 @@ Check console for complete data structure.`);
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [hasUnsavedChanges]);
-
-  console.log(parameters, JSON.stringify(parameters));
 
   return (
     <div className="container mx-auto p-6 max-w-7xl">
@@ -3106,1412 +3123,546 @@ Check console for complete data structure.`);
         </TabsContent>
 
         <TabsContent value="preview" className="space-y-6">
-          <div className="grid lg:grid-cols-2 gap-6">
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Calculator className="w-5 h-5" />
-                      <CardTitle>Customer Quote Form</CardTitle>
-                    </div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setShowFileUpload(!showFileUpload)}
-                      className="flex items-center gap-2"
-                    >
-                      <Upload className="w-4 h-4" />
-                      File Upload
-                    </Button>
-                  </div>
-                  <CardDescription>
-                    Preview how customers will see your product configuration
-                    form
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {parameters
-                    .filter((param) => isParameterVisible(param, formValues))
-                    .map((param) => (
-                      <div key={param.id} className="space-y-2">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Label
-                            htmlFor={`form-${param.id}`}
-                            className="flex-shrink-0"
-                          >
-                            {param.label || param.name}
-                            {param.unit && (
-                              <span className="text-muted-foreground ml-1">
-                                ({param.unit})
-                              </span>
-                            )}
-                          </Label>
-                          {param.required && (
-                            <Badge
-                              variant="destructive"
-                              className="text-xs font-medium px-2 py-1"
-                            >
-                              REQUIRED
-                            </Badge>
-                          )}
-                          {param.unitsPerQuantity &&
-                            param.unitsPerQuantity > 1 && (
-                              <Badge variant="outline" className="text-xs">
-                                {param.unitsPerQuantity} units per quantity
-                              </Badge>
-                            )}
-                          {param.isMainUnits && (
-                            <Badge
-                              variant="default"
-                              className="text-xs font-medium px-2 py-1"
-                            >
-                              MAIN UNITS
-                            </Badge>
-                          )}
-                          {param.conditional && (
-                            <Badge variant="secondary" className="text-xs">
-                              Conditional
-                            </Badge>
-                          )}
-                        </div>
+          <FormRenderer
+            parameters={parameters}
+            currency={selectedCurrency}
+            title="Customer Quote Form"
+            description="Preview how customers will see your product configuration form"
+            onFormChange={(newFormValues) => {
+              setFormValues(newFormValues);
+            }}
+            onPriceChange={(newTotalPrice, newPriceBreakdown) => {
+              setTotalPrice(newTotalPrice);
+              setPriceBreakdown(newPriceBreakdown);
+            }}
+            initialValues={formValues}
+            showPriceBreakdown={true}
+            showValidationErrors={true}
+            readOnly={false}
+            className=""
+          />
 
-                        {/* Parameter description */}
-                        {param.description && (
-                          <p className="text-sm text-muted-foreground">
-                            {param.description}
-                          </p>
-                        )}
-
-                        {param.type === "FixedOption" && (
-                          <>
-                            {/* Render based on displayType */}
-                            {(param.displayType === "select" ||
-                              !param.displayType) && (
-                              <Select
-                                value={
-                                  formValues[param.name] === ""
-                                    ? "__none__"
-                                    : formValues[param.name] || "__none__"
-                                }
-                                onValueChange={(value) => {
-                                  const actualValue =
-                                    value === "__none__" ? "" : value;
-                                  updateFormValue(param.name, actualValue);
-                                  const dependentParams = parameters.filter(
-                                    (p) =>
-                                      p.conditional?.parentParameter ===
-                                      param.name
-                                  );
-                                  dependentParams.forEach((depParam) => {
-                                    updateFormValue(depParam.name, "");
-                                  });
-                                }}
-                              >
-                                <SelectTrigger
-                                  className={
-                                    param.required &&
-                                    (!formValues[param.name] ||
-                                      formValues[param.name] === "")
-                                      ? "border-destructive ring-destructive/20 ring-2"
-                                      : ""
-                                  }
-                                >
-                                  <SelectValue
-                                    placeholder={
-                                      param.required
-                                        ? "Please select an option (Required)"
-                                        : "Select an option"
-                                    }
-                                  />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {!param.required && (
-                                    <SelectItem value="__none__">
-                                      <span className="text-muted-foreground italic">
-                                        None (clear selection)
-                                      </span>
-                                    </SelectItem>
-                                  )}
-                                  {param.options && param.options.length > 0 ? (
-                                    param.options
-                                      .filter(
-                                        (option) =>
-                                          option.value &&
-                                          option.value.trim() !== "" &&
-                                          option.label &&
-                                          option.label.trim() !== ""
-                                      )
-                                      .map((option, index) => (
-                                        <SelectItem
-                                          key={`${param.id}-${index}`}
-                                          value={option.value}
-                                        >
-                                          <div className="flex flex-col">
-                                            <span>{option.label}</span>
-                                            {option.description && (
-                                              <span className="text-xs text-muted-foreground">
-                                                {option.description}
-                                              </span>
-                                            )}
-                                          </div>
-                                        </SelectItem>
-                                      ))
-                                  ) : (
-                                    <SelectItem
-                                      key="no-options"
-                                      value="__no_options__"
-                                      disabled
-                                    >
-                                      No options available
-                                    </SelectItem>
-                                  )}
-                                </SelectContent>
-                              </Select>
-                            )}
-
-                            {/* Radio button rendering */}
-                            {param.displayType === "radio" && (
-                              <div className="space-y-3">
-                                {!param.required && (
-                                  <div className="flex items-center space-x-3 p-2 rounded hover:bg-gray-50">
-                                    <input
-                                      type="radio"
-                                      id={`${param.id}-none`}
-                                      name={param.name}
-                                      value=""
-                                      checked={
-                                        !formValues[param.name] ||
-                                        formValues[param.name] === ""
-                                      }
-                                      onChange={() => {
-                                        updateFormValue(param.name, "");
-                                        const dependentParams =
-                                          parameters.filter(
-                                            (p) =>
-                                              p.conditional?.parentParameter ===
-                                              param.name
-                                          );
-                                        dependentParams.forEach((depParam) => {
-                                          updateFormValue(depParam.name, "");
-                                        });
-                                      }}
-                                      className="w-4 h-4 text-primary focus:ring-primary"
-                                    />
-                                    <Label
-                                      htmlFor={`${param.id}-none`}
-                                      className="text-sm cursor-pointer text-muted-foreground italic"
-                                    >
-                                      None (clear selection)
-                                    </Label>
-                                  </div>
-                                )}
-                                {param.options && param.options.length > 0 ? (
-                                  param.options
-                                    .filter(
-                                      (option) =>
-                                        option.value &&
-                                        option.value.trim() !== "" &&
-                                        option.label &&
-                                        option.label.trim() !== ""
-                                    )
-                                    .map((option, index) => (
-                                      <div
-                                        key={`${param.id}-${index}`}
-                                        className="flex items-start space-x-3 p-3 rounded hover:bg-gray-50 border border-gray-200"
-                                      >
-                                        <input
-                                          type="radio"
-                                          id={`${param.id}-${option.value}`}
-                                          name={param.name}
-                                          value={option.value}
-                                          checked={
-                                            formValues[param.name] ===
-                                            option.value
-                                          }
-                                          onChange={() => {
-                                            updateFormValue(
-                                              param.name,
-                                              option.value
-                                            );
-                                            const dependentParams =
-                                              parameters.filter(
-                                                (p) =>
-                                                  p.conditional
-                                                    ?.parentParameter ===
-                                                  param.name
-                                              );
-                                            dependentParams.forEach(
-                                              (depParam) => {
-                                                updateFormValue(
-                                                  depParam.name,
-                                                  ""
-                                                );
-                                              }
-                                            );
-                                          }}
-                                          className="w-4 h-4 text-primary focus:ring-primary mt-0.5"
-                                        />
-                                        <Label
-                                          htmlFor={`${param.id}-${option.value}`}
-                                          className="flex-1 cursor-pointer"
-                                        >
-                                          <div className="flex flex-col">
-                                            <span className="font-medium">
-                                              {option.label}
-                                            </span>
-                                            {option.description && (
-                                              <span className="text-xs text-muted-foreground mt-1">
-                                                {option.description}
-                                              </span>
-                                            )}
-                                          </div>
-                                        </Label>
-                                      </div>
-                                    ))
-                                ) : (
-                                  <div className="text-sm text-muted-foreground">
-                                    No options available
-                                  </div>
-                                )}
-                              </div>
-                            )}
-
-                            {/* Toggle button rendering */}
-                            {param.displayType === "toggle" && (
-                              <div className="space-y-2">
-                                {!param.required && (
-                                  <Button
-                                    variant={
-                                      !formValues[param.name] ||
-                                      formValues[param.name] === ""
-                                        ? "default"
-                                        : "outline"
-                                    }
-                                    size="sm"
-                                    onClick={() => {
-                                      updateFormValue(param.name, "");
-                                      const dependentParams = parameters.filter(
-                                        (p) =>
-                                          p.conditional?.parentParameter ===
-                                          param.name
-                                      );
-                                      dependentParams.forEach((depParam) => {
-                                        updateFormValue(depParam.name, "");
-                                      });
-                                    }}
-                                    className="mr-2 mb-2"
-                                  >
-                                    None
-                                  </Button>
-                                )}
-                                <div className="flex flex-wrap gap-2">
-                                  {param.options && param.options.length > 0 ? (
-                                    param.options
-                                      .filter(
-                                        (option) =>
-                                          option.value &&
-                                          option.value.trim() !== "" &&
-                                          option.label &&
-                                          option.label.trim() !== ""
-                                      )
-                                      .map((option, index) => (
-                                        <Button
-                                          key={`${param.id}-${index}`}
-                                          variant={
-                                            formValues[param.name] ===
-                                            option.value
-                                              ? "default"
-                                              : "outline"
-                                          }
-                                          size="sm"
-                                          onClick={() => {
-                                            updateFormValue(
-                                              param.name,
-                                              option.value
-                                            );
-                                            const dependentParams =
-                                              parameters.filter(
-                                                (p) =>
-                                                  p.conditional
-                                                    ?.parentParameter ===
-                                                  param.name
-                                              );
-                                            dependentParams.forEach(
-                                              (depParam) => {
-                                                updateFormValue(
-                                                  depParam.name,
-                                                  ""
-                                                );
-                                              }
-                                            );
-                                          }}
-                                          className="flex flex-col items-start h-auto p-3"
-                                          title={option.description}
-                                        >
-                                          <span className="font-medium">
-                                            {option.label}
-                                          </span>
-                                          {option.description && (
-                                            <span className="text-xs opacity-70 mt-1 text-left">
-                                              {option.description.length > 50
-                                                ? `${option.description.substring(
-                                                    0,
-                                                    50
-                                                  )}...`
-                                                : option.description}
-                                            </span>
-                                          )}
-                                        </Button>
-                                      ))
-                                  ) : (
-                                    <div className="text-sm text-muted-foreground">
-                                      No options available
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-                          </>
-                        )}
-                        {param.type === "FixedOption" &&
-                          param.required &&
-                          (!formValues[param.name] ||
-                            formValues[param.name] === "") && (
-                            <div className="text-xs text-destructive font-medium flex items-center gap-1">
-                              <span className="w-1 h-1 bg-destructive rounded-full"></span>
-                              This field is required
-                            </div>
-                          )}
-
-                        {/* Sub-options for selected FixedOption */}
-                        {param.type === "FixedOption" &&
-                          (() => {
-                            const selectedOption = param.options?.find(
-                              (opt) => opt.value === formValues[param.name]
-                            );
-                            const subOptionDisplayType =
-                              selectedOption?.displayType || "radio";
-                            const isSubOptionRequired = param.required; // Sub-options are required if parent is required
-                            const hasSubOptionSelected =
-                              selectedOption?.subOptions?.some(
-                                (subOption) =>
-                                  formValues[`${param.name}_${subOption.value}`]
-                              );
-
-                            return selectedOption?.subOptions &&
-                              selectedOption.subOptions.length > 0 ? (
-                              <div className="ml-4 mt-3 space-y-3 border-l-2 border-gray-200 pl-4">
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <Label className="text-sm font-medium text-gray-700">
-                                    Additional Options for{" "}
-                                    {selectedOption.label}:
-                                  </Label>
-                                  {isSubOptionRequired && (
-                                    <Badge
-                                      variant="destructive"
-                                      className="text-xs font-medium px-2 py-1"
-                                    >
-                                      REQUIRED
-                                    </Badge>
-                                  )}
-                                </div>
-
-                                {/* Radio display for sub-options */}
-                                {subOptionDisplayType === "radio" && (
-                                  <div
-                                    className={`space-y-2 ${
-                                      isSubOptionRequired &&
-                                      !hasSubOptionSelected
-                                        ? "border-2 border-destructive rounded-lg p-2"
-                                        : ""
-                                    }`}
-                                  >
-                                    {/* Add "None" option for sub-options only if not required */}
-                                    {!isSubOptionRequired && (
-                                      <div className="flex items-center space-x-3 p-2 rounded hover:bg-gray-50">
-                                        <input
-                                          type="radio"
-                                          id={`suboption-none-${param.id}`}
-                                          name={`${param.name}_suboptions`}
-                                          value=""
-                                          checked={!hasSubOptionSelected}
-                                          onChange={() => {
-                                            // Clear all sub-options when "None" is selected
-                                            selectedOption.subOptions?.forEach(
-                                              (subOption) => {
-                                                updateFormValue(
-                                                  `${param.name}_${subOption.value}`,
-                                                  false
-                                                );
-                                              }
-                                            );
-                                          }}
-                                          className="w-4 h-4 text-primary focus:ring-primary"
-                                        />
-                                        <Label
-                                          htmlFor={`suboption-none-${param.id}`}
-                                          className="text-sm cursor-pointer"
-                                        >
-                                          None (no additional options)
-                                        </Label>
-                                      </div>
-                                    )}
-
-                                    {selectedOption.subOptions.map(
-                                      (subOption) => (
-                                        <div
-                                          key={subOption.id}
-                                          className="space-y-2"
-                                        >
-                                          <div className="flex items-center space-x-3 p-2 rounded hover:bg-gray-50">
-                                            <input
-                                              type="radio"
-                                              id={`suboption-${param.id}-${subOption.id}`}
-                                              name={`${param.name}_suboptions`}
-                                              value={subOption.value}
-                                              checked={
-                                                !!formValues[
-                                                  `${param.name}_${subOption.value}`
-                                                ]
-                                              }
-                                              onChange={() => {
-                                                // Clear all other sub-options first
-                                                selectedOption.subOptions?.forEach(
-                                                  (otherSubOption) => {
-                                                    updateFormValue(
-                                                      `${param.name}_${otherSubOption.value}`,
-                                                      false
-                                                    );
-                                                  }
-                                                );
-                                                // Then set this one to true
-                                                updateFormValue(
-                                                  `${param.name}_${subOption.value}`,
-                                                  true
-                                                );
-                                              }}
-                                              className="w-4 h-4 text-primary focus:ring-primary"
-                                            />
-                                            <Label
-                                              htmlFor={`suboption-${param.id}-${subOption.id}`}
-                                              className="text-sm font-medium flex items-center gap-2 cursor-pointer flex-1"
-                                            >
-                                              <div className="flex flex-col">
-                                                <span>{subOption.label}</span>
-                                                {subOption.price &&
-                                                  subOption.price > 0 && (
-                                                    <span className="text-green-600 font-medium text-xs">
-                                                      +
-                                                      {
-                                                        currencies[
-                                                          selectedCurrency
-                                                        ].symbol
-                                                      }
-                                                      <NumberFlow
-                                                        value={subOption.price}
-                                                        format={{
-                                                          minimumFractionDigits:
-                                                            selectedCurrency ===
-                                                            "IDR"
-                                                              ? 0
-                                                              : 2,
-                                                          maximumFractionDigits:
-                                                            selectedCurrency ===
-                                                            "IDR"
-                                                              ? 0
-                                                              : 2,
-                                                        }}
-                                                      />{" "}
-                                                      {subOption.pricingScope ===
-                                                      "per_qty"
-                                                        ? "per item"
-                                                        : "per unit"}
-                                                    </span>
-                                                  )}
-                                              </div>
-                                              {subOption.pricingScope ===
-                                                "per_unit" && (
-                                                <Badge
-                                                  variant="secondary"
-                                                  className="text-xs ml-auto"
-                                                >
-                                                  Per Unit
-                                                </Badge>
-                                              )}
-                                            </Label>
-                                          </div>
-                                          {subOption.description && (
-                                            <p className="text-xs text-muted-foreground ml-8">
-                                              {subOption.description}
-                                            </p>
-                                          )}
-                                        </div>
-                                      )
-                                    )}
-                                  </div>
-                                )}
-
-                                {/* Validation message for required sub-options */}
-                                {isSubOptionRequired &&
-                                  !hasSubOptionSelected && (
-                                    <div className="text-xs text-destructive font-medium flex items-center gap-1 mt-2">
-                                      <span className="w-1 h-1 bg-destructive rounded-full"></span>
-                                      Please select an additional option
-                                    </div>
-                                  )}
-
-                                {/* Toggle display for sub-options */}
-                                {subOptionDisplayType === "toggle" && (
-                                  <div
-                                    className={`space-y-2 ${
-                                      isSubOptionRequired &&
-                                      !hasSubOptionSelected
-                                        ? "border-2 border-destructive rounded-lg p-2"
-                                        : ""
-                                    }`}
-                                  >
-                                    {/* Add "None" option for sub-options only if not required */}
-                                    {!isSubOptionRequired && (
-                                      <Button
-                                        variant={
-                                          !hasSubOptionSelected
-                                            ? "default"
-                                            : "outline"
-                                        }
-                                        size="sm"
-                                        onClick={() => {
-                                          // Clear all sub-options when "None" is selected
-                                          selectedOption.subOptions?.forEach(
-                                            (subOption) => {
-                                              updateFormValue(
-                                                `${param.name}_${subOption.value}`,
-                                                false
-                                              );
-                                            }
-                                          );
-                                        }}
-                                        className="mr-2 mb-2"
-                                      >
-                                        None
-                                      </Button>
-                                    )}
-
-                                    <div className="flex flex-wrap gap-2">
-                                      {selectedOption.subOptions.map(
-                                        (subOption) => (
-                                          <Button
-                                            key={subOption.id}
-                                            variant={
-                                              formValues[
-                                                `${param.name}_${subOption.value}`
-                                              ]
-                                                ? "default"
-                                                : "outline"
-                                            }
-                                            size="sm"
-                                            onClick={() => {
-                                              // Clear all other sub-options first
-                                              selectedOption.subOptions?.forEach(
-                                                (otherSubOption) => {
-                                                  updateFormValue(
-                                                    `${param.name}_${otherSubOption.value}`,
-                                                    false
-                                                  );
-                                                }
-                                              );
-                                              // Then set this one to true
-                                              updateFormValue(
-                                                `${param.name}_${subOption.value}`,
-                                                true
-                                              );
-                                            }}
-                                            className="flex flex-col items-start h-auto p-3"
-                                            title={subOption.description}
-                                          >
-                                            <span className="font-medium">
-                                              {subOption.label}
-                                            </span>
-                                            {subOption.price &&
-                                              subOption.price > 0 && (
-                                                <span className="text-green-600 font-medium text-xs">
-                                                  +
-                                                  {
-                                                    currencies[selectedCurrency]
-                                                      .symbol
-                                                  }
-                                                  <NumberFlow
-                                                    value={subOption.price}
-                                                    format={{
-                                                      minimumFractionDigits:
-                                                        selectedCurrency ===
-                                                        "IDR"
-                                                          ? 0
-                                                          : 2,
-                                                      maximumFractionDigits:
-                                                        selectedCurrency ===
-                                                        "IDR"
-                                                          ? 0
-                                                          : 2,
-                                                    }}
-                                                  />
-                                                </span>
-                                              )}
-                                            {subOption.description && (
-                                              <span className="text-xs opacity-70 mt-1 text-left">
-                                                {subOption.description.length >
-                                                40
-                                                  ? `${subOption.description.substring(
-                                                      0,
-                                                      40
-                                                    )}...`
-                                                  : subOption.description}
-                                              </span>
-                                            )}
-                                          </Button>
-                                        )
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Validation message for required sub-options (toggle) */}
-                                {subOptionDisplayType === "toggle" &&
-                                  isSubOptionRequired &&
-                                  !hasSubOptionSelected && (
-                                    <div className="text-xs text-destructive font-medium flex items-center gap-1 mt-2">
-                                      <span className="w-1 h-1 bg-destructive rounded-full"></span>
-                                      Please select an additional option
-                                    </div>
-                                  )}
-                              </div>
-                            ) : null;
-                          })()}
-
-                        {param.type === "NumericValue" && (
-                          <>
-                            <Input
-                              id={`form-${param.id}`}
-                              type="number"
-                              min={param.min}
-                              max={param.max}
-                              step={param.step}
-                              value={formValues[param.name] || ""}
-                              onChange={(e) =>
-                                updateFormValue(param.name, e.target.value)
-                              }
-                              placeholder={
-                                param.required
-                                  ? "Enter value (Required)"
-                                  : "Enter value"
-                              }
-                              className={
-                                param.required &&
-                                (!formValues[param.name] ||
-                                  formValues[param.name] === "")
-                                  ? "border-destructive ring-destructive/20 ring-2"
-                                  : ""
-                              }
-                            />
-                            {param.required &&
-                              (!formValues[param.name] ||
-                                formValues[param.name] === "") && (
-                                <div className="text-xs text-destructive font-medium flex items-center gap-1">
-                                  <span className="w-1 h-1 bg-destructive rounded-full"></span>
-                                  This field is required
-                                </div>
-                              )}
-                          </>
-                        )}
-
-                        {param.type === "DerivedCalc" && (
-                          <div className="space-y-2">
-                            <Input
-                              id={`form-${param.id}`}
-                              value={
-                                typeof formValues[param.name] === "number"
-                                  ? formValues[param.name].toFixed(2)
-                                  : formValues[param.name] || "0.00"
-                              }
-                              disabled
-                              className="bg-muted font-mono"
-                            />
-                            {param.formula && (
-                              <div className="text-xs text-muted-foreground">
-                                Formula: {param.formula}
-                              </div>
-                            )}
-                            {param.dependencies &&
-                              param.dependencies.length > 0 && (
-                                <div className="text-xs text-muted-foreground">
-                                  Depends on: {param.dependencies.join(", ")}
-                                </div>
-                              )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                </CardContent>
-              </Card>
-
-              {showFileUpload && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Upload className="w-5 h-5" />
-                      File Upload & Metadata Extraction
-                    </CardTitle>
-                    <CardDescription>
-                      Upload files to automatically extract metadata and link to
-                      form parameters
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="space-y-3">
-                      <div>
-                        <Label className="text-sm font-medium">
-                          File Type to Accept (Choose One)
-                        </Label>
-                        <div className="grid grid-cols-2 gap-2 mt-2">
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="radio"
-                              id="filetype-pdf"
-                              name="fileType"
-                              checked={selectedFileType === "pdf"}
-                              onChange={() => selectFileType("pdf")}
-                              className="rounded"
-                            />
-                            <Label htmlFor="filetype-pdf" className="text-sm">
-                              PDF Documents
-                            </Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="radio"
-                              id="filetype-images"
-                              name="fileType"
-                              checked={selectedFileType === "images"}
-                              onChange={() => selectFileType("images")}
-                              className="rounded"
-                            />
-                            <Label
-                              htmlFor="filetype-images"
-                              className="text-sm"
-                            >
-                              Images (JPG, PNG, etc.)
-                            </Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="radio"
-                              id="filetype-3d"
-                              name="fileType"
-                              checked={selectedFileType === "3d"}
-                              onChange={() => selectFileType("3d")}
-                              className="rounded"
-                            />
-                            <Label htmlFor="filetype-3d" className="text-sm">
-                              3D Files (STL, OBJ, etc.)
-                            </Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="radio"
-                              id="filetype-documents"
-                              name="fileType"
-                              checked={selectedFileType === "documents"}
-                              onChange={() => selectFileType("documents")}
-                              className="rounded"
-                            />
-                            <Label
-                              htmlFor="filetype-documents"
-                              className="text-sm"
-                            >
-                              Text Documents (DOC, TXT)
-                            </Label>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div>
-                        <Label htmlFor="file-upload">Upload File</Label>
-                        <Input
-                          id="file-upload"
-                          type="file"
-                          accept={getFileAcceptString()}
-                          onChange={handleFileUpload}
-                          className="mt-1"
-                          disabled={!selectedFileType}
-                        />
-                        {!selectedFileType ? (
-                          <div className="text-xs text-destructive mt-1">
-                            Please select a file type above to enable upload
-                          </div>
-                        ) : (
-                          <div className="text-xs text-muted-foreground mt-1">
-                            <div className="mb-1">
-                              <strong>Currently accepting:</strong>
-                            </div>
-                            <div className="space-y-1">
-                              {selectedFileType === "pdf" && (
-                                <div>
-                                  <strong>PDF:</strong> Documents with page
-                                  counting
-                                </div>
-                              )}
-                              {selectedFileType === "images" && (
-                                <div>
-                                  <strong>Images:</strong> JPG, PNG, GIF, BMP,
-                                  WebP, SVG
-                                </div>
-                              )}
-                              {selectedFileType === "3d" && (
-                                <div>
-                                  <strong>3D Files:</strong> STL, OBJ, PLY, 3MF,
-                                  AMF, G-code
-                                </div>
-                              )}
-                              {selectedFileType === "documents" && (
-                                <div>
-                                  <strong>Documents:</strong> DOC, DOCX, TXT
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {uploadedFile && fileMetadata && (
-                      <>
-                        <div className="border rounded-lg p-3 bg-muted/50">
-                          <h4 className="font-medium mb-2">File Information</h4>
-                          <div className="space-y-1 text-sm">
-                            <div>
-                              <strong>Name:</strong> {fileMetadata.fileName}
-                            </div>
-                            <div>
-                              <strong>Size:</strong> {fileMetadata.sizeValue}{" "}
-                              {fileMetadata.sizeCategory}
-                            </div>
-                            <div>
-                              <strong>Type:</strong>{" "}
-                              {fileMetadata.fileFormat || fileMetadata.fileType}
-                            </div>
-
-                            {/* PDF specific metadata */}
-                            {fileMetadata.pages && (
-                              <div>
-                                <strong>Pages:</strong> {fileMetadata.pages}
-                              </div>
-                            )}
-
-                            {/* Image specific metadata */}
-                            {fileMetadata.width && fileMetadata.height && (
-                              <>
-                                <div>
-                                  <strong>Dimensions:</strong>{" "}
-                                  {fileMetadata.width} × {fileMetadata.height}px
-                                </div>
-                                {fileMetadata.aspectRatio && (
-                                  <div>
-                                    <strong>Aspect Ratio:</strong>{" "}
-                                    {fileMetadata.aspectRatio}:1
-                                  </div>
-                                )}
-                                {fileMetadata.megapixels && (
-                                  <div>
-                                    <strong>Megapixels:</strong>{" "}
-                                    {fileMetadata.megapixels}MP
-                                  </div>
-                                )}
-                              </>
-                            )}
-
-                            {/* 3D file specific metadata */}
-                            {fileMetadata.triangles && (
-                              <div>
-                                <strong>Triangles:</strong>{" "}
-                                {fileMetadata.triangles.toLocaleString()}
-                              </div>
-                            )}
-                            {fileMetadata.vertices && (
-                              <div>
-                                <strong>Vertices:</strong>{" "}
-                                {fileMetadata.vertices.toLocaleString()}
-                              </div>
-                            )}
-                            {fileMetadata.faces && (
-                              <div>
-                                <strong>Faces:</strong>{" "}
-                                {fileMetadata.faces.toLocaleString()}
-                              </div>
-                            )}
-                            {fileMetadata.estimatedVertices &&
-                              !fileMetadata.vertices && (
-                                <div>
-                                  <strong>Est. Vertices:</strong>{" "}
-                                  {fileMetadata.estimatedVertices.toLocaleString()}
-                                </div>
-                              )}
-
-                            {/* G-code specific metadata */}
-                            {fileMetadata.gcodeLines && (
-                              <div>
-                                <strong>G-code Lines:</strong>{" "}
-                                {fileMetadata.gcodeLines.toLocaleString()}
-                              </div>
-                            )}
-                            {fileMetadata.printTimeHours && (
-                              <div>
-                                <strong>Print Time:</strong>{" "}
-                                {fileMetadata.printTimeHours}h
-                              </div>
-                            )}
-                            {fileMetadata.layerHeight && (
-                              <div>
-                                <strong>Layer Height:</strong>{" "}
-                                {fileMetadata.layerHeight}mm
-                              </div>
-                            )}
-
-                            {/* Volume and weight for 3D files */}
-                            {fileMetadata.volume && (
-                              <div>
-                                <strong>Volume:</strong>{" "}
-                                {fileMetadata.volume < 1000
-                                  ? `${fileMetadata.volume.toFixed(2)} mm³`
-                                  : `${(fileMetadata.volume / 1000).toFixed(
-                                      2
-                                    )} cm³`}
-                              </div>
-                            )}
-                            {fileMetadata.weightGrams && (
-                              <div>
-                                <strong>Est. Weight:</strong>{" "}
-                                {fileMetadata.weightGrams < 1000
-                                  ? `${fileMetadata.weightGrams.toFixed(2)}g`
-                                  : `${(
-                                      fileMetadata.weightGrams / 1000
-                                    ).toFixed(2)}kg`}{" "}
-                                (PLA)
-                              </div>
-                            )}
-
-                            {/* Text file specific metadata */}
-                            {fileMetadata.lines && (
-                              <div>
-                                <strong>Lines:</strong>{" "}
-                                {fileMetadata.lines.toLocaleString()}
-                              </div>
-                            )}
-                            {fileMetadata.words && (
-                              <div>
-                                <strong>Words:</strong>{" "}
-                                {fileMetadata.words.toLocaleString()}
-                              </div>
-                            )}
-                            {fileMetadata.characters && (
-                              <div>
-                                <strong>Characters:</strong>{" "}
-                                {fileMetadata.characters.toLocaleString()}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between">
-                            <Label>Metadata Connections</Label>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={addFileConnection}
-                              className="flex items-center gap-2"
-                            >
-                              <Link className="w-4 h-4" />
-                              Add Connection
-                            </Button>
-                          </div>
-
-                          {fileConnections.map((connection) => (
-                            <div
-                              key={connection.id}
-                              className="border rounded-lg p-3 space-y-3"
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="text-sm font-medium">
-                                  Metadata Connection
-                                </span>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() =>
-                                    deleteFileConnection(connection.id)
-                                  }
-                                  className="text-destructive hover:text-destructive"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </Button>
-                              </div>
-
-                              <div className="grid grid-cols-2 gap-2">
-                                <div>
-                                  <Label className="text-xs">
-                                    Metadata Field
-                                  </Label>
-                                  <Select
-                                    value={connection.metadataKey}
-                                    onValueChange={(value) =>
-                                      updateFileConnection(connection.id, {
-                                        metadataKey: value,
-                                      })
-                                    }
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {/* PDF metadata */}
-                                      {fileMetadata.pages && (
-                                        <SelectItem value="pages">
-                                          Pages ({fileMetadata.pages})
-                                        </SelectItem>
-                                      )}
-
-                                      {/* Image metadata */}
-                                      {fileMetadata.width && (
-                                        <SelectItem value="width">
-                                          Width ({fileMetadata.width}px)
-                                        </SelectItem>
-                                      )}
-                                      {fileMetadata.height && (
-                                        <SelectItem value="height">
-                                          Height ({fileMetadata.height}px)
-                                        </SelectItem>
-                                      )}
-                                      {fileMetadata.aspectRatio && (
-                                        <SelectItem value="aspectRatio">
-                                          Aspect Ratio (
-                                          {fileMetadata.aspectRatio}:1)
-                                        </SelectItem>
-                                      )}
-                                      {fileMetadata.megapixels && (
-                                        <SelectItem value="megapixels">
-                                          Megapixels ({fileMetadata.megapixels}
-                                          MP)
-                                        </SelectItem>
-                                      )}
-
-                                      {/* 3D file metadata */}
-                                      {fileMetadata.triangles && (
-                                        <SelectItem value="triangles">
-                                          Triangles (
-                                          {fileMetadata.triangles.toLocaleString()}
-                                          )
-                                        </SelectItem>
-                                      )}
-                                      {fileMetadata.vertices && (
-                                        <SelectItem value="vertices">
-                                          Vertices (
-                                          {fileMetadata.vertices.toLocaleString()}
-                                          )
-                                        </SelectItem>
-                                      )}
-                                      {fileMetadata.faces && (
-                                        <SelectItem value="faces">
-                                          Faces (
-                                          {fileMetadata.faces.toLocaleString()})
-                                        </SelectItem>
-                                      )}
-                                      {fileMetadata.estimatedVertices &&
-                                        !fileMetadata.vertices && (
-                                          <SelectItem value="estimatedVertices">
-                                            Est. Vertices (
-                                            {fileMetadata.estimatedVertices.toLocaleString()}
-                                            )
-                                          </SelectItem>
-                                        )}
-                                      {fileMetadata.gcodeLines && (
-                                        <SelectItem value="gcodeLines">
-                                          G-code Lines (
-                                          {fileMetadata.gcodeLines.toLocaleString()}
-                                          )
-                                        </SelectItem>
-                                      )}
-                                      {fileMetadata.printTimeHours && (
-                                        <SelectItem value="printTimeHours">
-                                          Print Time (
-                                          {fileMetadata.printTimeHours}h)
-                                        </SelectItem>
-                                      )}
-                                      {fileMetadata.printTimeSeconds && (
-                                        <SelectItem value="printTimeSeconds">
-                                          Print Time (Seconds) (
-                                          {fileMetadata.printTimeSeconds})
-                                        </SelectItem>
-                                      )}
-                                      {fileMetadata.layerHeight && (
-                                        <SelectItem value="layerHeight">
-                                          Layer Height (
-                                          {fileMetadata.layerHeight}mm)
-                                        </SelectItem>
-                                      )}
-
-                                      {/* Volume and weight metadata */}
-                                      {fileMetadata.volume && (
-                                        <SelectItem value="volume">
-                                          Volume (
-                                          {fileMetadata.volume < 1000
-                                            ? `${fileMetadata.volume.toFixed(
-                                                2
-                                              )} mm³`
-                                            : `${(
-                                                fileMetadata.volume / 1000
-                                              ).toFixed(2)} cm³`}
-                                          )
-                                        </SelectItem>
-                                      )}
-                                      {fileMetadata.weightGrams && (
-                                        <SelectItem value="weightGrams">
-                                          Weight (
-                                          {fileMetadata.weightGrams < 1000
-                                            ? `${fileMetadata.weightGrams.toFixed(
-                                                2
-                                              )}g`
-                                            : `${(
-                                                fileMetadata.weightGrams / 1000
-                                              ).toFixed(2)}kg`}
-                                          )
-                                        </SelectItem>
-                                      )}
-
-                                      {/* Text file metadata */}
-                                      {fileMetadata.lines && (
-                                        <SelectItem value="lines">
-                                          Lines (
-                                          {fileMetadata.lines.toLocaleString()})
-                                        </SelectItem>
-                                      )}
-                                      {fileMetadata.words && (
-                                        <SelectItem value="words">
-                                          Words (
-                                          {fileMetadata.words.toLocaleString()})
-                                        </SelectItem>
-                                      )}
-                                      {fileMetadata.characters && (
-                                        <SelectItem value="characters">
-                                          Characters (
-                                          {fileMetadata.characters.toLocaleString()}
-                                          )
-                                        </SelectItem>
-                                      )}
-
-                                      {/* File size metadata */}
-                                      <SelectItem value="sizeValue">
-                                        File Size ({fileMetadata.sizeValue}{" "}
-                                        {fileMetadata.sizeCategory})
-                                      </SelectItem>
-                                      <SelectItem value="fileSize">
-                                        File Size (Bytes) (
-                                        {fileMetadata.fileSize})
-                                      </SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-
-                                <div>
-                                  <Label className="text-xs">
-                                    Link to Parameter
-                                  </Label>
-                                  <Select
-                                    value={connection.parameterName}
-                                    onValueChange={(value) =>
-                                      updateFileConnection(connection.id, {
-                                        parameterName: value,
-                                      })
-                                    }
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="Select parameter" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {parameters
-                                        .filter(
-                                          (p) =>
-                                            p.type === "NumericValue" ||
-                                            p.type === "DerivedCalc"
-                                        )
-                                        .map((param) => (
-                                          <SelectItem
-                                            key={param.id}
-                                            value={param.name}
-                                          >
-                                            {param.label || param.name}
-                                          </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-                              </div>
-
-                              {connection.parameterName && (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() =>
-                                    applyFileConnection(connection)
-                                  }
-                                  className="w-full flex items-center gap-2"
-                                >
-                                  <Link className="w-4 h-4" />
-                                  Apply Connection
-                                </Button>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-
-            {/* Validation Warnings */}
-            {(() => {
-              const validationErrors = validateRequiredSubOptions();
-              return validationErrors.length > 0 ? (
-                <Card className="border-destructive">
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-destructive flex items-center gap-2">
-                      <AlertTriangle className="w-5 h-5" />
-                      Required Selections Missing
-                    </CardTitle>
-                    <CardDescription>
-                      Please complete all required selections to proceed
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      {validationErrors.map((error, index) => (
-                        <div
-                          key={index}
-                          className="text-sm text-destructive flex items-center gap-2"
-                        >
-                          <span className="w-1.5 h-1.5 bg-destructive rounded-full"></span>
-                          {error}
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              ) : null;
-            })()}
-
+          {showFileUpload && (
             <Card>
               <CardHeader>
-                <CardTitle>Price Breakdown</CardTitle>
+                <CardTitle className="flex items-center gap-2">
+                  <Upload className="w-5 h-5" />
+                  File Upload & Metadata Extraction
+                </CardTitle>
                 <CardDescription>
-                  Real-time calculation based on your inputs
+                  Upload files to automatically extract metadata and link to
+                  form parameters
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {priceBreakdown.length > 0 ? (
-                  <>
-                    {priceBreakdown.map((item, index) => (
-                      <div
-                        key={index}
-                        className="flex justify-between items-start"
-                      >
-                        <div>
-                          <div className="font-medium">{item.parameter}</div>
-                          <div className="text-sm text-muted-foreground">
-                            {item.description}
-                          </div>
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-sm font-medium">
+                      File Type to Accept (Choose One)
+                    </Label>
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          id="filetype-pdf"
+                          name="fileType"
+                          checked={selectedFileType === "pdf"}
+                          onChange={() => selectFileType("pdf")}
+                          className="rounded"
+                        />
+                        <Label htmlFor="filetype-pdf" className="text-sm">
+                          PDF Documents
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          id="filetype-images"
+                          name="fileType"
+                          checked={selectedFileType === "images"}
+                          onChange={() => selectFileType("images")}
+                          className="rounded"
+                        />
+                        <Label htmlFor="filetype-images" className="text-sm">
+                          Images (JPG, PNG, etc.)
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          id="filetype-3d"
+                          name="fileType"
+                          checked={selectedFileType === "3d"}
+                          onChange={() => selectFileType("3d")}
+                          className="rounded"
+                        />
+                        <Label htmlFor="filetype-3d" className="text-sm">
+                          3D Files (STL, OBJ, etc.)
+                        </Label>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          id="filetype-documents"
+                          name="fileType"
+                          checked={selectedFileType === "documents"}
+                          onChange={() => selectFileType("documents")}
+                          className="rounded"
+                        />
+                        <Label htmlFor="filetype-documents" className="text-sm">
+                          Text Documents (DOC, TXT)
+                        </Label>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="file-upload">Upload File</Label>
+                    <Input
+                      id="file-upload"
+                      type="file"
+                      accept={getFileAcceptString()}
+                      onChange={handleFileUpload}
+                      className="mt-1"
+                      disabled={!selectedFileType}
+                    />
+                    {!selectedFileType ? (
+                      <div className="text-xs text-destructive mt-1">
+                        Please select a file type above to enable upload
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        <div className="mb-1">
+                          <strong>Currently accepting:</strong>
                         </div>
-                        <div className="font-mono">
-                          {currencies[selectedCurrency].symbol}
-                          <NumberFlow
-                            value={item.amount}
-                            format={{
-                              minimumFractionDigits:
-                                selectedCurrency === "IDR" ? 0 : 2,
-                              maximumFractionDigits:
-                                selectedCurrency === "IDR" ? 0 : 2,
-                            }}
-                          />
+                        <div className="space-y-1">
+                          {selectedFileType === "pdf" && (
+                            <div>
+                              <strong>PDF:</strong> Documents with page counting
+                            </div>
+                          )}
+                          {selectedFileType === "images" && (
+                            <div>
+                              <strong>Images:</strong> JPG, PNG, GIF, BMP, WebP,
+                              SVG
+                            </div>
+                          )}
+                          {selectedFileType === "3d" && (
+                            <div>
+                              <strong>3D Files:</strong> STL, OBJ, PLY, 3MF,
+                              AMF, G-code
+                            </div>
+                          )}
+                          {selectedFileType === "documents" && (
+                            <div>
+                              <strong>Documents:</strong> DOC, DOCX, TXT
+                            </div>
+                          )}
                         </div>
                       </div>
-                    ))}
-                    <Separator key="main-separator" />
-                    {(() => {
-                      const quantity =
-                        Number.parseFloat(formValues.quantity) || 1;
-                      const unitTotal = priceBreakdown
-                        .filter(
-                          (item) => item.parameter !== "Quantity Multiplier"
-                        )
-                        .reduce((sum, item) => sum + item.amount, 0);
+                    )}
+                  </div>
+                </div>
 
-                      return quantity > 1 ? (
-                        <>
-                          <div
-                            key="subtotal"
-                            className="flex justify-between items-center text-base"
-                          >
-                            <span>Price per unit</span>
-                            <span className="font-mono">
-                              {currencies[selectedCurrency].symbol}
-                              <NumberFlow
-                                value={unitTotal}
-                                format={{
-                                  minimumFractionDigits:
-                                    selectedCurrency === "IDR" ? 0 : 2,
-                                  maximumFractionDigits:
-                                    selectedCurrency === "IDR" ? 0 : 2,
-                                }}
-                              />
+                {uploadedFile && fileMetadata && (
+                  <>
+                    <div className="border rounded-lg p-3 bg-muted/50">
+                      <h4 className="font-medium mb-2">File Information</h4>
+                      <div className="space-y-1 text-sm">
+                        <div>
+                          <strong>Name:</strong> {fileMetadata.fileName}
+                        </div>
+                        <div>
+                          <strong>Size:</strong> {fileMetadata.sizeValue}{" "}
+                          {fileMetadata.sizeCategory}
+                        </div>
+                        <div>
+                          <strong>Type:</strong>{" "}
+                          {fileMetadata.fileFormat || fileMetadata.fileType}
+                        </div>
+
+                        {/* PDF specific metadata */}
+                        {fileMetadata.pages && (
+                          <div>
+                            <strong>Pages:</strong> {fileMetadata.pages}
+                          </div>
+                        )}
+
+                        {/* Image specific metadata */}
+                        {fileMetadata.width && fileMetadata.height && (
+                          <>
+                            <div>
+                              <strong>Dimensions:</strong> {fileMetadata.width}{" "}
+                              × {fileMetadata.height}px
+                            </div>
+                            {fileMetadata.aspectRatio && (
+                              <div>
+                                <strong>Aspect Ratio:</strong>{" "}
+                                {fileMetadata.aspectRatio}:1
+                              </div>
+                            )}
+                            {fileMetadata.megapixels && (
+                              <div>
+                                <strong>Megapixels:</strong>{" "}
+                                {fileMetadata.megapixels}MP
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {/* 3D file specific metadata */}
+                        {fileMetadata.triangles && (
+                          <div>
+                            <strong>Triangles:</strong>{" "}
+                            {fileMetadata.triangles.toLocaleString()}
+                          </div>
+                        )}
+                        {fileMetadata.vertices && (
+                          <div>
+                            <strong>Vertices:</strong>{" "}
+                            {fileMetadata.vertices.toLocaleString()}
+                          </div>
+                        )}
+                        {fileMetadata.faces && (
+                          <div>
+                            <strong>Faces:</strong>{" "}
+                            {fileMetadata.faces.toLocaleString()}
+                          </div>
+                        )}
+                        {fileMetadata.estimatedVertices &&
+                          !fileMetadata.vertices && (
+                            <div>
+                              <strong>Est. Vertices:</strong>{" "}
+                              {fileMetadata.estimatedVertices.toLocaleString()}
+                            </div>
+                          )}
+
+                        {/* G-code specific metadata */}
+                        {fileMetadata.gcodeLines && (
+                          <div>
+                            <strong>G-code Lines:</strong>{" "}
+                            {fileMetadata.gcodeLines.toLocaleString()}
+                          </div>
+                        )}
+                        {fileMetadata.printTimeHours && (
+                          <div>
+                            <strong>Print Time:</strong>{" "}
+                            {fileMetadata.printTimeHours}h
+                          </div>
+                        )}
+                        {fileMetadata.layerHeight && (
+                          <div>
+                            <strong>Layer Height:</strong>{" "}
+                            {fileMetadata.layerHeight}mm
+                          </div>
+                        )}
+
+                        {/* Volume and weight for 3D files */}
+                        {fileMetadata.volume && (
+                          <div>
+                            <strong>Volume:</strong>{" "}
+                            {fileMetadata.volume < 1000
+                              ? `${fileMetadata.volume.toFixed(2)} mm³`
+                              : `${(fileMetadata.volume / 1000).toFixed(
+                                  2
+                                )} cm³`}
+                          </div>
+                        )}
+                        {fileMetadata.weightGrams && (
+                          <div>
+                            <strong>Est. Weight:</strong>{" "}
+                            {fileMetadata.weightGrams < 1000
+                              ? `${fileMetadata.weightGrams.toFixed(2)}g`
+                              : `${(fileMetadata.weightGrams / 1000).toFixed(
+                                  2
+                                )}kg`}{" "}
+                            (PLA)
+                          </div>
+                        )}
+
+                        {/* Text file specific metadata */}
+                        {fileMetadata.lines && (
+                          <div>
+                            <strong>Lines:</strong>{" "}
+                            {fileMetadata.lines.toLocaleString()}
+                          </div>
+                        )}
+                        {fileMetadata.words && (
+                          <div>
+                            <strong>Words:</strong>{" "}
+                            {fileMetadata.words.toLocaleString()}
+                          </div>
+                        )}
+                        {fileMetadata.characters && (
+                          <div>
+                            <strong>Characters:</strong>{" "}
+                            {fileMetadata.characters.toLocaleString()}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label>Metadata Connections</Label>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={addFileConnection}
+                          className="flex items-center gap-2"
+                        >
+                          <Link className="w-4 h-4" />
+                          Add Connection
+                        </Button>
+                      </div>
+
+                      {fileConnections.map((connection) => (
+                        <div
+                          key={connection.id}
+                          className="border rounded-lg p-3 space-y-3"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">
+                              Metadata Connection
                             </span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() =>
+                                deleteFileConnection(connection.id)
+                              }
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
                           </div>
-                          <div
-                            key="quantity-multiplier"
-                            className="flex justify-between items-center text-base"
-                          >
-                            <span>Quantity ordered</span>
-                            <span className="font-mono">× {quantity}</span>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <Label className="text-xs">Metadata Field</Label>
+                              <Select
+                                value={connection.metadataKey}
+                                onValueChange={(value) =>
+                                  updateFileConnection(connection.id, {
+                                    metadataKey: value,
+                                  })
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {/* PDF metadata */}
+                                  {fileMetadata.pages && (
+                                    <SelectItem value="pages">
+                                      Pages ({fileMetadata.pages})
+                                    </SelectItem>
+                                  )}
+
+                                  {/* Image metadata */}
+                                  {fileMetadata.width && (
+                                    <SelectItem value="width">
+                                      Width ({fileMetadata.width}px)
+                                    </SelectItem>
+                                  )}
+                                  {fileMetadata.height && (
+                                    <SelectItem value="height">
+                                      Height ({fileMetadata.height}px)
+                                    </SelectItem>
+                                  )}
+                                  {fileMetadata.aspectRatio && (
+                                    <SelectItem value="aspectRatio">
+                                      Aspect Ratio ({fileMetadata.aspectRatio}
+                                      :1)
+                                    </SelectItem>
+                                  )}
+                                  {fileMetadata.megapixels && (
+                                    <SelectItem value="megapixels">
+                                      Megapixels ({fileMetadata.megapixels}
+                                      MP)
+                                    </SelectItem>
+                                  )}
+
+                                  {/* 3D file metadata */}
+                                  {fileMetadata.triangles && (
+                                    <SelectItem value="triangles">
+                                      Triangles (
+                                      {fileMetadata.triangles.toLocaleString()})
+                                    </SelectItem>
+                                  )}
+                                  {fileMetadata.vertices && (
+                                    <SelectItem value="vertices">
+                                      Vertices (
+                                      {fileMetadata.vertices.toLocaleString()})
+                                    </SelectItem>
+                                  )}
+                                  {fileMetadata.faces && (
+                                    <SelectItem value="faces">
+                                      Faces (
+                                      {fileMetadata.faces.toLocaleString()})
+                                    </SelectItem>
+                                  )}
+                                  {fileMetadata.estimatedVertices &&
+                                    !fileMetadata.vertices && (
+                                      <SelectItem value="estimatedVertices">
+                                        Est. Vertices (
+                                        {fileMetadata.estimatedVertices.toLocaleString()}
+                                        )
+                                      </SelectItem>
+                                    )}
+                                  {fileMetadata.gcodeLines && (
+                                    <SelectItem value="gcodeLines">
+                                      G-code Lines (
+                                      {fileMetadata.gcodeLines.toLocaleString()}
+                                      )
+                                    </SelectItem>
+                                  )}
+                                  {fileMetadata.printTimeHours && (
+                                    <SelectItem value="printTimeHours">
+                                      Print Time ({fileMetadata.printTimeHours}
+                                      h)
+                                    </SelectItem>
+                                  )}
+                                  {fileMetadata.printTimeSeconds && (
+                                    <SelectItem value="printTimeSeconds">
+                                      Print Time (Seconds) (
+                                      {fileMetadata.printTimeSeconds})
+                                    </SelectItem>
+                                  )}
+                                  {fileMetadata.layerHeight && (
+                                    <SelectItem value="layerHeight">
+                                      Layer Height ({fileMetadata.layerHeight}
+                                      mm)
+                                    </SelectItem>
+                                  )}
+
+                                  {/* Volume and weight metadata */}
+                                  {fileMetadata.volume && (
+                                    <SelectItem value="volume">
+                                      Volume (
+                                      {fileMetadata.volume < 1000
+                                        ? `${fileMetadata.volume.toFixed(
+                                            2
+                                          )} mm³`
+                                        : `${(
+                                            fileMetadata.volume / 1000
+                                          ).toFixed(2)} cm³`}
+                                      )
+                                    </SelectItem>
+                                  )}
+                                  {fileMetadata.weightGrams && (
+                                    <SelectItem value="weightGrams">
+                                      Weight (
+                                      {fileMetadata.weightGrams < 1000
+                                        ? `${fileMetadata.weightGrams.toFixed(
+                                            2
+                                          )}g`
+                                        : `${(
+                                            fileMetadata.weightGrams / 1000
+                                          ).toFixed(2)}kg`}
+                                      )
+                                    </SelectItem>
+                                  )}
+
+                                  {/* Text file metadata */}
+                                  {fileMetadata.lines && (
+                                    <SelectItem value="lines">
+                                      Lines (
+                                      {fileMetadata.lines.toLocaleString()})
+                                    </SelectItem>
+                                  )}
+                                  {fileMetadata.words && (
+                                    <SelectItem value="words">
+                                      Words (
+                                      {fileMetadata.words.toLocaleString()})
+                                    </SelectItem>
+                                  )}
+                                  {fileMetadata.characters && (
+                                    <SelectItem value="characters">
+                                      Characters (
+                                      {fileMetadata.characters.toLocaleString()}
+                                      )
+                                    </SelectItem>
+                                  )}
+
+                                  {/* File size metadata */}
+                                  <SelectItem value="sizeValue">
+                                    File Size ({fileMetadata.sizeValue}{" "}
+                                    {fileMetadata.sizeCategory})
+                                  </SelectItem>
+                                  <SelectItem value="fileSize">
+                                    File Size (Bytes) ({fileMetadata.fileSize})
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div>
+                              <Label className="text-xs">
+                                Link to Parameter
+                              </Label>
+                              <Select
+                                value={connection.parameterName}
+                                onValueChange={(value) =>
+                                  updateFileConnection(connection.id, {
+                                    parameterName: value,
+                                  })
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select parameter" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {parameters
+                                    .filter(
+                                      (p) =>
+                                        p.type === "NumericValue" ||
+                                        p.type === "DerivedCalc"
+                                    )
+                                    .map((param) => (
+                                      <SelectItem
+                                        key={param.id}
+                                        value={param.name}
+                                      >
+                                        {param.label || param.name}
+                                      </SelectItem>
+                                    ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
-                          <Separator key="quantity-separator" />
-                        </>
-                      ) : null;
-                    })()}
-                    <div
-                      key="total"
-                      className="flex justify-between items-center text-lg font-bold"
-                    >
-                      <span>Total</span>
-                      <span className="font-mono">
-                        {currencies[selectedCurrency].symbol}
-                        <NumberFlow
-                          value={totalPrice}
-                          format={{
-                            minimumFractionDigits:
-                              selectedCurrency === "IDR" ? 0 : 2,
-                            maximumFractionDigits:
-                              selectedCurrency === "IDR" ? 0 : 2,
-                          }}
-                        />
-                      </span>
+
+                          {connection.parameterName && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => applyFileConnection(connection)}
+                              className="w-full flex items-center gap-2"
+                            >
+                              <Link className="w-4 h-4" />
+                              Apply Connection
+                            </Button>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </>
-                ) : (
-                  <div className="text-center text-muted-foreground py-8">
-                    Fill out the form to see price calculation
-                  </div>
                 )}
               </CardContent>
             </Card>
+          )}
+
+          {/* Add File Upload Button */}
+          <div className="flex justify-center">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowFileUpload(!showFileUpload)}
+              className="flex items-center gap-2"
+            >
+              <Upload className="w-4 h-4" />
+              {showFileUpload ? "Hide" : "Show"} File Upload
+            </Button>
           </div>
         </TabsContent>
 
