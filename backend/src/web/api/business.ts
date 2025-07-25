@@ -257,7 +257,7 @@ router.put("/product/:productId", async (req, res) => {
     }
 
     if (result[0]) {
-      res.send({
+      return res.send({
         message: "Product updated successfully",
         product: result[0],
         id: result[0].id,
