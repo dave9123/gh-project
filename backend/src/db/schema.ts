@@ -86,14 +86,6 @@ export const businessRelations = relations(businessTable, ({ many, one }) => ({
   }),
 }));
 
-// export const productsRelations = relations(productsTable, ({ one, many }) => ({
-//   business: one(businessTable, {
-//     fields: [productsTable.businessId],
-//     references: [businessTable.id],
-//   }),
-//   orders: many(ordersTable),
-// }));
-
 export const ordersRelations = relations(ordersTable, ({ one }) => ({
   user: one(usersTable, {
     fields: [ordersTable.userId],
