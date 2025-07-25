@@ -19,6 +19,7 @@ export const productsTable = pgTable("products", {
     description: varchar().default("").notNull(),
     basePrice: integer().notNull(),
     currencyType: varchar().default("IDR").notNull(),
+    business: integer().notNull().references(() => businessTable.id),
 
     createdAt: timestamp().defaultNow().notNull(),
     lastModified: timestamp().defaultNow().notNull()
