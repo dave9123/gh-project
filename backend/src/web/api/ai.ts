@@ -2,6 +2,7 @@ import express from "express";
 import db from "../../modules/db";
 import { OpenAI } from "openai";
 import { productsTable } from "../../db/schema";
+import { eq } from "drizzle-orm";
 import multer from "multer";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import crypto from "crypto";
@@ -73,11 +74,13 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     // Generate unique filename
     const fileExtension = path.extname(req.file.originalname);
     const fileName = `${crypto.randomUUID()}${fileExtension}`;
-    const filePath = `ai-chat/${businessId}/${chatId || "general"}/${fileName}`;
+    const filePath = `garudahack/${businessId}/${
+      chatId || "general"
+    }/${fileName}`;
 
     // Upload to Supabase S3
     const uploadCommand = new PutObjectCommand({
-      Bucket: "ai-chat-uploads", // Make sure this bucket exists in Supabase
+      Bucket: "garudahack", // Make sure this bucket exists in Supabase
       Key: filePath,
       Body: req.file.buffer,
       ContentType: req.file.mimetype,
@@ -94,7 +97,7 @@ router.post("/upload", upload.single("file"), async (req, res) => {
     await s3Client.send(uploadCommand);
 
     // Generate public URL for Supabase storage
-    const publicUrl = `https://fasyqyuaqbncfurxwliy.supabase.co/storage/v1/object/public/ai-chat-uploads/${filePath}`;
+    const publicUrl = `https://fasyqyuaqbncfurxwliy.supabase.co/storage/v1/object/public/garudahack/${filePath}`;
 
     // Return file information for AI processing
     res.json({
@@ -143,10 +146,9 @@ router.get("/", (req, res) => {
         .status(400)
         .json({ error: "Message and businessId are required" });
     }
-
     db.select()
       .from(productsTable)
-      .where(eq(productsTable.business, businessId))
+      .where(eq(productsTable.business, parseInt(businessId as string, 10)))
       .then((cts: any) => {
         categories = cts.map((category: any) => category.name);
       });
