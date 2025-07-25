@@ -106,11 +106,133 @@ router.post("/product", async (req, res) => {
       .returning({ insertId: productsTable.id });
 
     res.send({
-      generatedId: result && result[0] ? result[0].insertId : 0,
-      name,
-      description,
-      currencyType,
-      basePrice,
+      product: {
+        id: result && result[0] ? result[0].insertId : 0,
+        name,
+        description,
+        currencyType,
+        basePrice,
+      },
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "An unexpected error occurred" });
+  }
+});
+
+router.get("/products", async (req, res) => {
+  try {
+    // Check if user is authenticated
+    if (!req.user?.email) {
+      return res
+        .status(401)
+        .json({ error: "User not authenticated or email not found" });
+    }
+
+    const userEmail = req.user.email;
+
+    // Get user's business first
+    const business = await db
+      .select()
+      .from(businessTable)
+      .where(eq(businessTable.ownerEmail, userEmail))
+      .limit(1);
+
+    if (business.length === 0) {
+      return res.status(404).json({ error: "No business found for this user" });
+    }
+
+    const businessData = business[0]!;
+    const businessId = businessData.id;
+
+    // Get products belonging to the user's business
+    const products = await db
+      .select({
+        id: productsTable.id,
+        name: productsTable.name,
+        description: productsTable.description,
+        basePrice: productsTable.basePrice,
+        currencyType: productsTable.currencyType,
+      })
+      .from(productsTable)
+      .orderBy(productsTable.createdAt);
+
+    res.send({
+      products,
+      totalCount: products.length,
+      businessInfo: {
+        id: businessData.id,
+        name: businessData.name,
+        slug: businessData.slug,
+      },
+      message: "Products retrieved successfully",
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "An unexpected error occurred" });
+  }
+});
+
+router.put("/product/:productId", async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const productIdNum = parseInt(productId);
+
+    if (isNaN(productIdNum)) {
+      return res.status(400).json({ error: "Invalid product ID" });
+    }
+
+    // Check if product exists
+    const existingProduct = await db
+      .select()
+      .from(productsTable)
+      .where(eq(productsTable.id, productIdNum))
+      .limit(1);
+
+    if (existingProduct.length === 0) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    // Build update object with only provided fields
+    const updateData: any = {};
+
+    if (req.body.name !== undefined) updateData.name = req.body.name;
+    if (req.body.description !== undefined)
+      updateData.description = req.body.description;
+    if (req.body.basePrice !== undefined)
+      updateData.basePrice = req.body.basePrice;
+    if (req.body.currencyType !== undefined)
+      updateData.currencyType = req.body.currencyType;
+    if (req.body.businessId !== undefined)
+      updateData.businessId = req.body.businessId;
+    if (req.body.formData !== undefined)
+      updateData.formData = req.body.formData;
+
+    // Add lastModified timestamp
+    updateData.lastModified = new Date();
+
+    // Check if there's anything to update
+    if (Object.keys(updateData).length === 1) {
+      // Only lastModified
+      return res
+        .status(400)
+        .json({ error: "No valid fields provided for update" });
+    }
+
+    // Perform the update
+    const result = await db
+      .update(productsTable)
+      .set(updateData)
+      .where(eq(productsTable.id, productIdNum))
+      .returning();
+
+    if (result.length === 0) {
+      return res.status(500).json({ error: "Failed to update product" });
+    }
+
+    res.send({
+      message: "Product updated successfully",
+      product: result[0],
     });
   } catch (error) {
     console.error(error);
@@ -127,16 +249,70 @@ router.delete("/product/:productId", (req, res) => {
   }
 });
 
-router.get("/product/:productId", (req, res) => {
+router.get("/product/:productId", async (req, res) => {
   try {
-    // const product = parseInt(req.params.productId);
-    // if (isNaN(product)) return res.status(400).json({ error: "Product ID is required" });
-    // const productItem = db.select().from(usersTable).where(eq(usersTable.id, product));
-    // res.send({
-    //   generatedId: productItem.oid,
-    //   name: productItem.$dynamic.name,
-    // })
-    // db.select()
+    // Check if user is authenticated
+    if (!req.user?.email) {
+      return res
+        .status(401)
+        .json({ error: "User not authenticated or email not found" });
+    }
+
+    const { productId } = req.params;
+    const productIdNum = parseInt(productId);
+
+    if (isNaN(productIdNum)) {
+      return res.status(400).json({ error: "Invalid product ID" });
+    }
+
+    const userEmail = req.user.email;
+
+    // Get user's business first
+    const business = await db
+      .select()
+      .from(businessTable)
+      .where(eq(businessTable.ownerEmail, userEmail))
+      .limit(1);
+
+    if (business.length === 0) {
+      return res.status(404).json({ error: "No business found for this user" });
+    }
+
+    const businessData = business[0]!;
+
+    // Get the specific product by ID
+    const product = await db
+      .select({
+        id: productsTable.id,
+        name: productsTable.name,
+        description: productsTable.description,
+        basePrice: productsTable.basePrice,
+        currencyType: productsTable.currencyType,
+        formData: productsTable.formData,
+        createdAt: productsTable.createdAt,
+        lastModified: productsTable.lastModified,
+      })
+      .from(productsTable)
+      .where(eq(productsTable.id, productIdNum))
+      .limit(1);
+
+    if (product.length === 0) {
+      return res.status(404).json({
+        error: "Product not found",
+      });
+    }
+
+    const productData = product[0]!;
+
+    res.send({
+      product: productData,
+      businessInfo: {
+        id: businessData.id,
+        name: businessData.name,
+        slug: businessData.slug,
+      },
+      message: "Product retrieved successfully",
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "An unexpected error occurred" });
@@ -149,18 +325,6 @@ router.get("/product", async (req, res) => {
       return res.status(403).json({ error: "Forbidden" });
     const products = await db.select().from(productsTable);
     res.send(products);
-  } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "An unexpected error occurred" });
-  }
-});
-
-router.post("/product", (req, res) => {
-  try {
-    const { productId, name, ratioType, ratioToPrice } = req.body;
-    if (!productId || !name || !ratioType || !ratioToPrice) {
-      return res.status(400).json({ error: "All fields are required" });
-    }
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "An unexpected error occurred" });
