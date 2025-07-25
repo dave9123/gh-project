@@ -36,6 +36,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import Link from "next/link";
+import { EmptyState } from "./ui/empty-state";
 
 interface Category {
   id: string;
@@ -201,6 +202,18 @@ export default function DashboardDefaultPage() {
               </Dialog>
             </div>
             <div className="mt-4 space-y-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-4">
+              {category.length == 0 && (
+                <EmptyState
+                  title="You haven't setup a single product yet"
+                  description=""
+                  // action={{
+                  //   label: "Add a new product",
+                  //   onClick: () => {
+                  //     // Open the dialog to add a new product
+                  //   },
+                  // }}
+                />
+              )}
               {category.map((item, index) => (
                 <Card key={index}>
                   <CardHeader>

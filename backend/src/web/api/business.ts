@@ -16,30 +16,40 @@ router.post("/create", async (req, res) => {
     if (slug.includes(" ")) {
       return res.status(400).json({ error: "Slug name cannot contain spaces" });
     }
-    const email = /^[\w-\.]+@([\w-]+\.)+[\w-]{2,63}$/g;
-    if (!email.test(ownerEmail)) {
-      return res.status(400).json({ error: "Invalid email format" });
-    }
 
     if (!/^\+?[1-9]\d{1,14}$/.test(phoneNumber)) {
       return res.status(400).json({ error: "Invalid phone number format" });
     }
 
-    await db.insert(businessTable).values({
-      name,
-      slug,
-      phoneNumber,
-      ownerEmail,
-    });
+    const user = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.email, req.user.email))
+      .limit(1);
 
-    res.send({
-      message: "Business created successfully!",
-      business: {
+    if (user[0]) {
+      await db.insert(businessTable).values({
         name,
         slug,
         phoneNumber,
-        ownerEmail,
-      },
+        ownerEmail: user[0].email,
+      });
+
+      res.send({
+        message: "Business created successfully!",
+        business: {
+          name,
+          slug,
+          phoneNumber,
+          ownerEmail,
+        },
+      });
+
+      return;
+    }
+
+    res.send({
+      message: "Error occured when creating business!",
     });
   } catch (error) {
     console.error(error);
@@ -94,6 +104,22 @@ router.post("/product", async (req, res) => {
       return res.status(400).json({ error: "All fields are required" });
     const { name, description, basePrice, currencyType } = req.body;
 
+    const userEmail = req.user.email;
+
+    // Get user's business first
+    const business = await db
+      .select()
+      .from(businessTable)
+      .where(eq(businessTable.ownerEmail, userEmail))
+      .limit(1);
+
+    if (business.length === 0) {
+      return res.status(404).json({ error: "No business found for this user" });
+    }
+
+    const businessData = business[0]!;
+    const businessId = businessData.id;
+
     const result = await db
       .insert(productsTable)
       // @ts-ignore
@@ -102,6 +128,7 @@ router.post("/product", async (req, res) => {
         description,
         basePrice,
         currencyType,
+        businessId: businessId, // Assuming businessId is stored in user session
       })
       .returning({ insertId: productsTable.id });
 
@@ -203,8 +230,6 @@ router.put("/product/:productId", async (req, res) => {
       updateData.basePrice = req.body.basePrice;
     if (req.body.currencyType !== undefined)
       updateData.currencyType = req.body.currencyType;
-    if (req.body.businessId !== undefined)
-      updateData.businessId = req.body.businessId;
     if (req.body.formData !== undefined)
       updateData.formData = req.body.formData;
 
