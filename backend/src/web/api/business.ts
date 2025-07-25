@@ -33,7 +33,7 @@ router.post("/create", (req, res) => {
             "message": "Business created successfully!",
             "business": {
                 name,
-                slug: slug,
+                slug,
                 phoneNumber,
                 ownerEmail
             }
