@@ -21,8 +21,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { redirect, useParams, useRouter } from "next/navigation";
+import ReactMarkdown from "react-markdown";
 
-type ActiveButton = "none" | "add" | "deepSearch" | "think";
+type ActiveButton = "none" | "add";
 type MessageType = "user" | "system";
 
 interface Card {
@@ -79,6 +81,7 @@ const WORD_DELAY = 40; // ms per word
 const CHUNK_SIZE = 2; // Number of words to add at once
 
 export default function ChatInterface() {
+  const { slug } = useParams();
   const [inputValue, setInputValue] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
@@ -102,15 +105,51 @@ export default function ChatInterface() {
   const inputContainerRef = useRef<HTMLDivElement>(null);
   const shouldFocusAfterStreamingRef = useRef(false);
   const mainContainerRef = useRef<HTMLDivElement>(null);
-  const [businessId, setBusinessId] = useState<string>("1"); // Default business ID
+  const [businessId, setBusinessId] = useState<string>("");
   const [uploadedFiles, setUploadedFiles] = useState<FileUpload[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+
+  // Set businessId from slug param when component mounts
+  useEffect(() => {
+    if (typeof slug === "string") {
+      setBusinessId(slug);
+    }
+    const initializeChat = async () => {
+      try {
+        const response = await fetch(`http://localhost:4000/api/ai`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            businessSlug: slug,
+          }),
+        });
+        if (response.status == 404) {
+          console.log("redirect");
+          router.push("/404");
+        }
+        console.log(response);
+
+        // If you need to set any state based on the response
+        // setInitialChatData(data);
+      } catch (error) {
+        console.error("Failed to initialize chat:", error);
+      }
+    };
+
+    initializeChat();
+  }, [slug]);
   // Store selection state
   const selectionStateRef = useRef<{
     start: number | null;
     end: number | null;
   }>({ start: null, end: null });
+
+  // Add conversation history state
+  const [conversationHistory, setConversationHistory] = useState<Message[]>([]);
 
   // Constants for layout calculations to account for the padding values
   const HEADER_HEIGHT = 48; // 12px height + padding
@@ -158,7 +197,7 @@ export default function ChatInterface() {
       const welcomeMessage: Message = {
         id: "welcome",
         content:
-          "Hello! I'm your printing service AI assistant. I can help you with quotes, product information, file uploads, and general questions about our printing services. What can I help you with today?",
+          "Halo! Saya asisten AI layanan pencetakan Anda. Saya bisa membantu Anda dengan penawaran harga, informasi produk, unggah berkas, dan pertanyaan umum seputar layanan pencetakan kami. Ada yang bisa saya bantu hari ini?",
         type: "system",
         completed: true,
       };
@@ -166,6 +205,15 @@ export default function ChatInterface() {
       setCompletedMessages(new Set(["welcome"]));
     }
   }, []);
+
+  // Update conversation history whenever messages change
+  useEffect(() => {
+    // Filter out incomplete streaming messages and welcome message for conversation history
+    const historyMessages = messages.filter(
+      (msg) => msg.completed && msg.id !== "welcome"
+    );
+    setConversationHistory(historyMessages);
+  }, [messages]);
 
   // Organize messages into sections
   useEffect(() => {
@@ -325,15 +373,16 @@ export default function ChatInterface() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("businessId", businessId);
+      formData.append("businessSlug", businessId);
       formData.append("chatId", "general");
-      formData.append("userId", "user-1"); // You can get this from auth context
+      formData.append(
+        "conversationHistory",
+        JSON.stringify(conversationHistory)
+      );
 
       const response = await fetch(`http://localhost:4000/api/ai/upload`, {
         method: "POST",
-        headers: {
-          Authorization: `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImFAYS5jb20iLCJpYXQiOjE3NTM0MDg5NDh9.Pk7W7YSmJSY8maYxDaZIIuQdVGNfMNTtnJFieVDAfBQ`,
-        },
+
         body: formData,
       });
 
@@ -366,9 +415,28 @@ export default function ChatInterface() {
           ).toFixed(2)} MB)`,
           type: "user" as MessageType,
           newSection: messages.length > 0,
+          completed: true, // Mark file upload messages as completed
         };
 
         setMessages((prev) => [...prev, fileMessage]);
+
+        // Mark file message as completed
+        setCompletedMessages((prev) => new Set(prev).add(fileMessage.id));
+
+        // Add AI response about the uploaded file if available
+        if (result.file.response) {
+          const aiResponseMessage = {
+            id: `ai-upload-${Date.now()}`,
+            content: result.file.response,
+            type: "system" as MessageType,
+            completed: true,
+          };
+
+          setMessages((prev) => [...prev, aiResponseMessage]);
+          setCompletedMessages((prev) =>
+            new Set(prev).add(aiResponseMessage.id)
+          );
+        }
 
         return result.file;
       } else {
@@ -386,6 +454,9 @@ export default function ChatInterface() {
   // Real AI API call
   const callAIAPI = async (userMessage: string): Promise<string> => {
     try {
+      // Debug: Log conversation history being sent
+      console.log("Sending conversation history:", conversationHistory);
+
       const response = await fetch(`http://localhost:4000/api/ai/chat`, {
         method: "POST",
         headers: {
@@ -394,7 +465,8 @@ export default function ChatInterface() {
         },
         body: JSON.stringify({
           message: userMessage,
-          businessId: businessId,
+          businessSlug: businessId,
+          conversationHistory: conversationHistory,
         }),
       });
 
@@ -413,93 +485,6 @@ export default function ChatInterface() {
       console.error("AI API call error:", error);
       return "I apologize, but I'm having trouble connecting to the AI service right now. Please try again in a moment.";
     }
-  };
-
-  const getAIResponse = (userMessage: string) => {
-    const responses = [
-      `That's an interesting perspective. Let me elaborate on that a bit further. When we consider the implications of what you've shared, several key points come to mind. First, it's important to understand the context and how it relates to broader concepts. This allows us to develop a more comprehensive understanding of the situation. Would you like me to explore any specific aspect of this in more detail?`,
-
-      `I appreciate you sharing that. From what I understand, there are multiple layers to consider here. The initial aspect relates to the fundamental principles we're discussing, but there's also a broader context to consider. This reminds me of similar scenarios where the underlying patterns reveal interesting connections. What aspects of this would you like to explore further?`,
-
-      `Thank you for bringing this up. It's a fascinating topic that deserves careful consideration. When we analyze the details you've provided, we can identify several important elements that contribute to our understanding. This kind of discussion often leads to valuable insights and new perspectives. Is there a particular element you'd like me to focus on?`,
-
-      `Your message raises some compelling points. Let's break this down systematically to better understand the various components involved. There are several key factors to consider, each contributing to the overall picture in unique ways. This kind of analysis often reveals interesting patterns and connections that might not be immediately apparent. What specific aspects would you like to delve into?`,
-    ];
-
-    return responses[Math.floor(Math.random() * responses.length)];
-  };
-
-  const getAICardResponse = (
-    userMessage: string
-  ): { text: string; cards: Card[] } => {
-    const cardResponses = [
-      {
-        text: "Here are some key insights and recommendations based on your query:",
-        cards: [
-          {
-            id: "insight-1",
-            title: "Primary Recommendation",
-            description:
-              "Based on current best practices, this approach would be most effective for your specific use case.",
-            icon: "💡",
-            action: "Learn More",
-            metadata: "Recommended",
-          },
-          {
-            id: "insight-2",
-            title: "Alternative Solution",
-            description:
-              "Consider this secondary option if you need more flexibility or have specific constraints.",
-            icon: "🔄",
-            action: "Explore",
-            metadata: "Alternative",
-          },
-          {
-            id: "insight-3",
-            title: "Additional Resources",
-            description:
-              "These tools and references can help you implement the solution more effectively.",
-            icon: "📚",
-            action: "View Resources",
-            metadata: "Helpful",
-          },
-        ],
-      },
-      {
-        text: "I've analyzed your request and found several relevant options:",
-        cards: [
-          {
-            id: "option-1",
-            title: "Quick Start Guide",
-            description:
-              "Get up and running quickly with this step-by-step approach designed for beginners.",
-            icon: "🚀",
-            action: "Get Started",
-            metadata: "Beginner Friendly",
-          },
-          {
-            id: "option-2",
-            title: "Advanced Configuration",
-            description:
-              "For experienced users who need more control and customization options.",
-            icon: "⚙️",
-            action: "Configure",
-            metadata: "Advanced",
-          },
-          {
-            id: "option-3",
-            title: "Best Practices",
-            description:
-              "Industry-standard approaches and common patterns to ensure optimal results.",
-            icon: "✨",
-            action: "View Guide",
-            metadata: "Recommended",
-          },
-        ],
-      },
-    ];
-
-    return cardResponses[Math.floor(Math.random() * cardResponses.length)];
   };
 
   const simulateAIResponse = async (userMessage: string) => {
@@ -611,6 +596,7 @@ export default function ChatInterface() {
         content: userMessage,
         type: "user" as MessageType,
         newSection: shouldAddNewSection,
+        completed: true, // Mark user messages as completed immediately
       };
 
       // Reset input before starting the AI response
@@ -624,6 +610,9 @@ export default function ChatInterface() {
 
       // Add the message after resetting input
       setMessages((prev) => [...prev, newUserMessage]);
+
+      // Mark user message as completed
+      setCompletedMessages((prev) => new Set(prev).add(newUserMessage.id));
 
       // Only focus the textarea on desktop, not on mobile
       if (!isMobile) {
@@ -651,6 +640,14 @@ export default function ChatInterface() {
     if (!isStreaming && !isUploading) {
       fileInputRef.current?.click();
     }
+  };
+
+  const clearConversation = () => {
+    setMessages([]);
+    setConversationHistory([]);
+    setCompletedMessages(new Set());
+    setMessageSections([]);
+    setActiveSectionId(null);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -703,26 +700,38 @@ export default function ChatInterface() {
         >
           {/* For user messages or completed system messages, render without animation */}
           {message.content && (
-            <span
+            <div
               className={
                 message.type === "system" && !isCompleted
                   ? "animate-fade-in"
                   : ""
               }
             >
-              {message.content}
-            </span>
+              {message.type === "system" ? (
+                <div className="prose prose-sm max-w-none">
+                  <ReactMarkdown>{message.content}</ReactMarkdown>
+                </div>
+              ) : (
+                <span>{message.content}</span>
+              )}
+            </div>
           )}
 
           {/* For streaming messages, render with animation */}
           {message.id === streamingMessageId && (
-            <span className="inline">
-              {streamingWords.map((word) => (
-                <span key={word.id} className="animate-fade-in inline">
-                  {word.text}
-                </span>
-              ))}
-            </span>
+            <div className="inline">
+              <div className="prose prose-sm max-w-none inline">
+                <ReactMarkdown>
+                  {streamingWords
+                    .map((word) => (
+                      <span key={word.id} className="animate-fade-in inline">
+                        {word.text}
+                      </span>
+                    ))
+                    .join("")}
+                </ReactMarkdown>
+              </div>
+            </div>
           )}
         </div>
 
@@ -798,19 +807,7 @@ export default function ChatInterface() {
     >
       <header className="fixed top-0 left-0 right-0 h-12 flex items-center px-4 z-20 bg-gray-50">
         <div className="w-full flex items-center justify-between px-2">
-          <Button variant="ghost" size="icon" className="rounded-full h-8 w-8">
-            <Menu className="h-5 w-5 text-gray-700" />
-            <span className="sr-only">Menu</span>
-          </Button>
-
-          <h1 className="text-base font-medium text-gray-800">
-            Printing AI Assistant
-          </h1>
-
-          <Button variant="ghost" size="icon" className="rounded-full h-8 w-8">
-            <PenSquare className="h-5 w-5 text-gray-700" />
-            <span className="sr-only">New Chat</span>
-          </Button>
+          <h1 className="text-base font-medium text-gray-800">Asisten AI</h1>
         </div>
       </header>
 
@@ -921,59 +918,6 @@ export default function ChatInterface() {
                       )}
                     />
                     <span className="sr-only">Upload File</span>
-                  </Button>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className={cn(
-                      "rounded-full h-8 px-3 flex items-center border-gray-200 gap-1.5 transition-colors",
-                      activeButton === "deepSearch" &&
-                        "bg-gray-100 border-gray-300"
-                    )}
-                    onClick={() => toggleButton("deepSearch")}
-                    disabled={isStreaming || isUploading}
-                  >
-                    <Search
-                      className={cn(
-                        "h-4 w-4 text-gray-500",
-                        activeButton === "deepSearch" && "text-gray-700"
-                      )}
-                    />
-                    <span
-                      className={cn(
-                        "text-gray-900 text-sm",
-                        activeButton === "deepSearch" && "font-medium"
-                      )}
-                    >
-                      DeepSearch
-                    </span>
-                  </Button>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className={cn(
-                      "rounded-full h-8 px-3 flex items-center border-gray-200 gap-1.5 transition-colors",
-                      activeButton === "think" && "bg-gray-100 border-gray-300"
-                    )}
-                    onClick={() => toggleButton("think")}
-                    disabled={isStreaming || isUploading}
-                  >
-                    <Lightbulb
-                      className={cn(
-                        "h-4 w-4 text-gray-500",
-                        activeButton === "think" && "text-gray-700"
-                      )}
-                    />
-                    <span
-                      className={cn(
-                        "text-gray-900 text-sm",
-                        activeButton === "think" && "font-medium"
-                      )}
-                    >
-                      Think
-                    </span>
                   </Button>
                 </div>
 
