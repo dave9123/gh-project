@@ -1,0 +1,174 @@
+    case "calculate_quote":
+      // Let AI model calculate the quote with comprehensive pricing rules
+      try {
+        // Fetch the specific product to get its form data and base price
+        const products = await db
+          .select()
+          .from(productsTable)
+          .where(eq(productsTable.businessId, businessId));
+
+        const selectedProduct = products.find((p) => p.name === args.category);
+
+        if (!selectedProduct) {
+          return {
+            success: false,
+            error: `Kategori produk '${
+              args.category
+            }' tidak ditemukan. Kategori yang tersedia: ${products
+              .map((p) => p.name)
+              .join(", ")}`,
+          };
+        }
+
+        const basePrice = selectedProduct.basePrice || 0;
+        const formData = selectedProduct.formData as any;
+        const userSpecs = args.specifications || {};
+
+        console.log("Delegating calculation to AI model");
+        console.log("Product:", selectedProduct.name);
+        console.log("Base Price:", basePrice);
+        console.log("User Specifications:", JSON.stringify(userSpecs, null, 2));
+        console.log("Form Data:", JSON.stringify(formData, null, 2));
+
+        // Create comprehensive calculation prompt for AI
+        const calculationPrompt = `PERHITUNGAN PENAWARAN HARGA - PANDUAN LENGKAP
+
+Anda diminta untuk menghitung penawaran harga berdasarkan data produk dan spesifikasi pengguna. Ikuti aturan perhitungan berikut dengan SANGAT TELITI:
+
+=== DATA PRODUK ===
+Nama Produk: ${selectedProduct.name}
+Deskripsi: ${selectedProduct.description}
+Base Price: ${basePrice} ${selectedProduct.currencyType}
+Currency: ${selectedProduct.currencyType}
+
+=== SPESIFIKASI PENGGUNA ===
+${JSON.stringify(userSpecs, null, 2)}
+
+=== STRUKTUR PRICING FORM ===
+${JSON.stringify(formData, null, 2)}
+
+=== ATURAN PERHITUNGAN PRICING ===
+
+1. **QUANTITY**: 
+   - Ambil dari userSpecs.quantity, default = 1
+   - Quantity mengalikan TOTAL AKHIR
+
+2. **MAIN UNITS PARAMETER**:
+   - Cari parameter dengan isMainUnits: true
+   - Nilai dari parameter ini akan digunakan untuk unit_price calculations
+   - Contoh: jika Weight = 10 grams dan isMainUnits: true, maka mainUnitsValue = 10
+
+3. **PARAMETER TYPES & PRICING**:
+
+   **A. FixedOption (radio/select/toggle)**:
+   - Cari option yang dipilih berdasarkan userSpecs[parameter.name]
+   - Match dengan option.value atau option.label
+   - Hitung pricing dari selectedOption.pricing:
+     
+     • base_price: Tambahkan langsung ke subtotal
+     • unit_price: 
+       - Jika parameter.pricingScope === "per_unit": unit_price * mainUnitsValue
+       - Jika parameter.pricingScope === "per_qty" atau undefined: unit_price saja
+     • multiplier: JANGAN kalikan langsung, kumpulkan untuk nanti
+     • subOptions: Proses jika ada, gunakan pricingScope masing-masing
+
+   **B. NumericValue/DerivedCalc**:
+   - Ambil nilai numerik dari userSpecs[parameter.name]
+   - Hitung dari parameter.pricing:
+     
+     • base_price: Tambahkan langsung ke subtotal
+     • unit_price:
+       - Jika parameter.pricingScope === "per_unit": nilai * unit_price
+       - Jika parameter.pricingScope === "per_qty": unit_price saja
+     • step_pricing: Jika nilai > threshold, tambahkan (nilai - threshold) * step_amount
+     • multiplier: Kumpulkan untuk aplikasi akhir
+
+4. **PERHITUNGAN STEP BY STEP**:
+   
+   STEP 1: Hitung subtotal dari semua parameter
+   subtotal = base_price + sum(semua parameter costs)
+   
+   STEP 2: Kumpulkan semua multipliers
+   totalMultiplier = multiplier1 * multiplier2 * multiplier3 * ...
+   
+   STEP 3: Hitung unit price
+   unitPrice = subtotal * totalMultiplier
+   
+   STEP 4: Hitung total final
+   finalTotal = unitPrice * quantity
+
+5. **CONTOH PERHITUNGAN**:
+Jika ada:
+- Base Price: 1000
+- Weight: 10 grams (isMainUnits: true)
+- Paper Size A3: unit_price 45, pricingScope: per_unit
+- Printing Sides 2: multiplier 1.56, unit_price 999.92, pricingScope: per_unit
+- Colour Black & White: no pricing
+- Quantity: 1
+
+Perhitungan:
+1. Paper Size: 45 * 10 = 450
+2. Printing Sides: 999.92 * 10 = 9999.2, multiplier = 1.56
+3. Subtotal: 1000 + 450 + 9999.2 = 11449.2
+4. Unit Price: 11449.2 * 1.56 = 17860.752
+5. Final Total: 17860.752 * 1 = 17860.752
+
+BERIKAN HASIL DALAM FORMAT JSON YANG VALID dengan struktur berikut:
+{
+  "calculation_success": true,
+  "quote_id": "uuid-string",
+  "product_name": "nama produk",
+  "base_price": number,
+  "quantity": number,
+  "main_units_value": number,
+  "main_units_parameter": "nama parameter",
+  "parameter_calculations": [
+    {
+      "parameter_name": "string",
+      "user_value": "string",
+      "cost": number,
+      "calculation_detail": "string"
+    }
+  ],
+  "multipliers": [
+    {
+      "from_parameter": "string", 
+      "multiplier_value": number,
+      "reason": "string"
+    }
+  ],
+  "subtotal": number,
+  "total_multiplier": number,
+  "unit_price": number,
+  "final_total": number,
+  "currency": "string",
+  "calculation_breakdown": "penjelasan lengkap"
+}
+
+HITUNG DENGAN SANGAT TELITI DAN BERIKAN RESULT DALAM FORMAT JSON YANG VALID!`;
+
+        return {
+          success: true,
+          ai_calculation_required: true,
+          calculation_prompt: calculationPrompt,
+          product_data: {
+            id: selectedProduct.id,
+            name: selectedProduct.name,
+            description: selectedProduct.description,
+            basePrice: basePrice,
+            currencyType: selectedProduct.currencyType,
+            formData: formData,
+          },
+          user_specifications: userSpecs,
+          instruction:
+            "Gunakan prompt perhitungan untuk menghitung penawaran harga dengan AI model. Berikan hasil yang akurat dan detail.",
+        };
+      } catch (error) {
+        console.error("Calculate quote preparation error:", error);
+        return {
+          success: false,
+          error: "Gagal mempersiapkan perhitungan penawaran harga",
+          instruction:
+            "Beri tahu pengguna bahwa terjadi kesalahan dalam mempersiapkan perhitungan penawaran harga.",
+        };
+      }

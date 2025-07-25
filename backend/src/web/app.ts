@@ -44,7 +44,7 @@ app.use((req, res, next) => {
   jwt.verify(token, process.env.JWT_SECRET as string, (err: any, user: any) => {
     if (err) {
       console.error("An error occured while verifying JWT", err);
-      return res.sendStatus(500).json({ error: "Internal Server Error" });
+      return res.status(500).json({ error: "Internal Server Error" });
     }
     console.log("User authenticated:", user);
     req.user = user;
