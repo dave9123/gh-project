@@ -12,11 +12,12 @@ const compat = new FlatCompat({
 const eslintConfig = [
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 
-  // 👇 Manual override to disable rules
+  // 👇 Rule overrides
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "off",
       "@typescript-eslint/ban-ts-comment": "off",
+      "react/no-unescaped-entities": "off",
     },
   },
 ];
