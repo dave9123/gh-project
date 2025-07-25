@@ -1,9 +1,10 @@
 import express from "express";
+import { eq } from "drizzle-orm";
 import db from "../../modules/db";
 import { productsTable, usersTable, businessTable } from "../../db/schema";
 const router = express.Router();
 
-router.post("/create", (req, res) => {
+router.post("/create", async (req, res) => {
   try {
     console.log(req.user, req.body);
 
@@ -24,7 +25,7 @@ router.post("/create", (req, res) => {
       return res.status(400).json({ error: "Invalid phone number format" });
     }
 
-    db.insert(businessTable).values({
+    await db.insert(businessTable).values({
       name,
       slug,
       phoneNumber,
@@ -48,14 +49,33 @@ router.post("/create", (req, res) => {
 
 router.get("/get", async (req, res) => {
   try {
-    // await db.select().from(businessTable).then((business) => {/
-
     console.log(req.user);
+
+    if (!req.user?.email) {
+      return res
+        .status(401)
+        .json({ error: "User not authenticated or email not found" });
+    }
+
+    const business = await db
+      .select()
+      .from(businessTable)
+      .where(eq(businessTable.ownerEmail, req.user.email))
+      .limit(1);
+
+    if (business.length === 0) {
+      return res.status(404).json({ error: "No business found for this user" });
+    }
+
+    const businessData = business[0]!;
     res.send({
-      name: "Business Name",
-      slug: "business-name",
-      phoneNumber: "Business Phone Number",
-      ownerEmail: "email@domain.com",
+      business: {
+        name: businessData.name,
+        slug: businessData.slug,
+        phoneNumber: businessData.phoneNumber,
+        ownerEmail: businessData.ownerEmail,
+      },
+      message: "Business retrieved successfully",
     });
   } catch (error) {
     console.error(error);
@@ -76,6 +96,7 @@ router.post("/product", async (req, res) => {
 
     const result = await db
       .insert(productsTable)
+      // @ts-ignore
       .values({
         name,
         description,
