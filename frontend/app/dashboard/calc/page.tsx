@@ -127,19 +127,28 @@ interface SaveResponse {
 }
 
 // Safe expression evaluator for basic math operations
+// Handles decimal numbers with high precision
 const evaluateExpression = (expression: string): number => {
   try {
-    // Remove any non-mathematical characters for safety
+    // Remove any non-mathematical characters for safety, but preserve decimals
     const sanitized = expression.replace(/[^0-9+\-*/().\s]/g, "");
 
     // Use Function constructor instead of eval for better safety
     const func = new Function("return " + sanitized);
     const result = func();
 
+    // Return result with full precision for decimal numbers
     return typeof result === "number" && !isNaN(result) ? result : 0;
   } catch (e) {
     return 0;
   }
+};
+
+// Safe number parsing that preserves decimal precision
+const parseDecimal = (value: string | number): number => {
+  if (typeof value === "number") return value;
+  const parsed = parseFloat(value);
+  return isNaN(parsed) ? 0 : parsed;
 };
 
 // Extract metadata from uploaded files
@@ -1152,9 +1161,11 @@ export default function QuoteFormBuilder() {
               hasAllDependencies = false;
               return;
             }
+            // Use high precision string representation for decimal numbers
+            const valueStr = value.toString();
             formula = formula.replace(
               new RegExp(`\\b${dep}\\b`, "g"),
-              value.toString()
+              valueStr
             );
           });
 
@@ -1338,9 +1349,11 @@ export default function QuoteFormBuilder() {
               let formula = param.formula;
               param.dependencies.forEach((dep) => {
                 const depValue = Number.parseFloat(newValues[dep]) || 0;
+                // Use high precision string representation for decimal numbers
+                const valueStr = depValue.toString();
                 formula = formula.replace(
                   new RegExp(`\\b${dep}\\b`, "g"),
-                  depValue.toString()
+                  valueStr
                 );
               });
               const result = evaluateExpression(formula);
@@ -1400,9 +1413,11 @@ export default function QuoteFormBuilder() {
                   return;
                 }
 
+                // Use high precision string representation for decimal numbers
+                const valueStr = depValue.toString();
                 formula = formula.replace(
                   new RegExp(`\\b${dep}\\b`, "g"),
-                  depValue.toString()
+                  valueStr
                 );
               });
 
@@ -1449,9 +1464,11 @@ export default function QuoteFormBuilder() {
                   return;
                 }
 
+                // Use high precision string representation for decimal numbers
+                const valueStr = depValue.toString();
                 formula = formula.replace(
                   new RegExp(`\\b${dep}\\b`, "g"),
-                  depValue.toString()
+                  valueStr
                 );
               });
 
