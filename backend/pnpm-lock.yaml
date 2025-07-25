@@ -21,8 +21,8 @@ importers:
         specifier: ^6.7.18
         version: 6.7.18(eslint@9.31.0)(typescript@5.8.3)
       dotenv:
-        specifier: ^17.2.0
-        version: 17.2.0
+        specifier: ^17.2.1
+        version: 17.2.1
       drizzle-orm:
         specifier: ^0.44.3
         version: 0.44.3(@neondatabase/serverless@1.0.1)(@types/pg@8.15.4)(pg@8.16.3)
@@ -40,13 +40,13 @@ importers:
         version: 2.0.2
       openai:
         specifier: ^5.10.2
-        version: 5.10.2(ws@8.18.3)(zod@4.0.8)
+        version: 5.10.2(ws@8.18.3)(zod@4.0.10)
       pg:
         specifier: ^8.16.3
         version: 8.16.3
       zod:
-        specifier: ^4.0.8
-        version: 4.0.8
+        specifier: ^4.0.10
+        version: 4.0.10
     devDependencies:
       '@types/express':
         specifier: ^5.0.3
@@ -1532,8 +1532,8 @@ packages:
     resolution: {integrity: sha512-3UDv+G9CsCKO1WKMGw9fwq/SWJYbI0c5Y7LU1AXYoDdbhE2AHQ6N6Nb34sG8Fj7T5APy8qXDCKuuIHd1BR0tVA==}
     engines: {node: '>=8'}
 
-  dotenv@17.2.0:
-    resolution: {integrity: sha512-Q4sgBT60gzd0BB0lSyYD3xM4YxrXA9y4uBDof1JNYGzOXrQdQ6yX+7XIAqoFOGQFOTK1D3Hts5OllpxMDZFONQ==}
+  dotenv@17.2.1:
+    resolution: {integrity: sha512-kQhDYKZecqnM0fCnzI5eIv5L4cAe/iRI+HqMbO/hbRdTAeXDG+M9FjipUxNfbARuEg4iHIbhnhs78BCHNbSxEQ==}
     engines: {node: '>=12'}
 
   drizzle-kit@0.31.4:
@@ -2591,8 +2591,8 @@ packages:
   zod@3.22.3:
     resolution: {integrity: sha512-EjIevzuJRiRPbVH4mGc8nApb/lVLKVpmUhAaR5R5doKGfAnGJ6Gr3CViAVjP+4FWSxCsybeWQdcgCtbX+7oZug==}
 
-  zod@4.0.8:
-    resolution: {integrity: sha512-+MSh9cZU9r3QKlHqrgHMTSr3QwMGv4PLfR0M4N/sYWV5/x67HgXEhIGObdBkpnX8G78pTgWnIrBL2lZcNJOtfg==}
+  zod@4.0.10:
+    resolution: {integrity: sha512-3vB+UU3/VmLL2lvwcY/4RV2i9z/YU0DTV/tDuYjrwmx5WeJ7hwy+rGEEx8glHp6Yxw7ibRbKSaIFBgReRPe5KA==}
 
 snapshots:
 
@@ -4263,7 +4263,7 @@ snapshots:
 
   detect-libc@2.0.4: {}
 
-  dotenv@17.2.0: {}
+  dotenv@17.2.1: {}
 
   drizzle-kit@0.31.4:
     dependencies:
@@ -4874,10 +4874,10 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  openai@5.10.2(ws@8.18.3)(zod@4.0.8):
+  openai@5.10.2(ws@8.18.3)(zod@4.0.10):
     optionalDependencies:
       ws: 8.18.3
-      zod: 4.0.8
+      zod: 4.0.10
 
   optionator@0.9.4:
     dependencies:
@@ -5353,4 +5353,4 @@ snapshots:
 
   zod@3.22.3: {}
 
-  zod@4.0.8: {}
+  zod@4.0.10: {}
