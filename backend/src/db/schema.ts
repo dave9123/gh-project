@@ -26,9 +26,11 @@ export const productsTable = pgTable("products", {
   description: varchar().default("").notNull(),
   basePrice: integer().notNull(),
   currencyType: varchar().default("IDR").notNull(),
-  businessId: integer()
-    .notNull()
-    .references(() => businessTable.id),
+  // businessId: integer()
+  //   .notNull()
+  //   .references(() => businessTable.id),
+
+  formData: varchar().default("").notNull(),
 
   createdAt: timestamp().defaultNow().notNull(),
   lastModified: timestamp().defaultNow().notNull(),
@@ -92,13 +94,13 @@ export const businessRelations = relations(businessTable, ({ many, one }) => ({
   }),
 }));
 
-export const productsRelations = relations(productsTable, ({ one, many }) => ({
-  business: one(businessTable, {
-    fields: [productsTable.businessId],
-    references: [businessTable.id],
-  }),
-  orders: many(ordersTable),
-}));
+// export const productsRelations = relations(productsTable, ({ one, many }) => ({
+//   business: one(businessTable, {
+//     fields: [productsTable.businessId],
+//     references: [businessTable.id],
+//   }),
+//   orders: many(ordersTable),
+// }));
 
 export const ordersRelations = relations(ordersTable, ({ one }) => ({
   user: one(usersTable, {
