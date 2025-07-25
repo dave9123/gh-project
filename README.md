@@ -1,4 +1,4 @@
-# Instaquote
+# InstaQuote
 
 A platform to help businesses make a dynamic pricing for their customer. So their customer get instant quote order based on their uploaded files instantly.
 
