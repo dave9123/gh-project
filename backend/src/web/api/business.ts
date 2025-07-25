@@ -248,9 +248,77 @@ router.put("/product/:productId", async (req, res) => {
   }
 });
 
-router.delete("/product/:productId", (req, res) => {
+router.delete("/product/:productId", async (req, res) => {
   try {
     const { productId } = req.params;
+    const productIdNum = parseInt(productId);
+
+    if (isNaN(productIdNum)) {
+      return res.status(400).json({ error: "Invalid product ID" });
+    }
+
+    // Check if user is authenticated
+    if (!req.user?.email) {
+      return res
+        .status(401)
+        .json({ error: "User not authenticated or email not found" });
+    }
+
+    const userEmail = req.user.email;
+
+    // Get user's business first to verify ownership
+    const business = await db
+      .select()
+      .from(businessTable)
+      .where(eq(businessTable.ownerEmail, userEmail))
+      .limit(1);
+
+    if (business.length === 0) {
+      return res.status(404).json({ error: "No business found for this user" });
+    }
+
+    const businessData = business[0]!;
+
+    // Check if product exists and belongs to the user's business
+    const existingProduct = await db
+      .select()
+      .from(productsTable)
+      .where(eq(productsTable.id, productIdNum))
+      .limit(1);
+
+    if (existingProduct.length === 0) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    const productData = existingProduct[0]!;
+
+    // Verify the product belongs to the user's business
+    if (productData.businessId !== businessData.id) {
+      return res.status(403).json({
+        error: "Unauthorized: Product does not belong to your business",
+      });
+    }
+
+    // Delete the product
+    const result = await db
+      .delete(productsTable)
+      .where(eq(productsTable.id, productIdNum))
+      .returning({
+        id: productsTable.id,
+        name: productsTable.name,
+      });
+
+    if (result.length === 0) {
+      return res.status(500).json({ error: "Failed to delete product" });
+    }
+
+    res.send({
+      message: "Product deleted successfully",
+      deletedProduct: {
+        id: result[0]!.id,
+        name: result[0]!.name,
+      },
+    });
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "An unexpected error occurred" });
@@ -296,7 +364,6 @@ router.get("/product/:productId", async (req, res) => {
         description: productsTable.description,
         basePrice: productsTable.basePrice,
         currencyType: productsTable.currencyType,
-        formData: productsTable.formData,
         createdAt: productsTable.createdAt,
         lastModified: productsTable.lastModified,
       })
