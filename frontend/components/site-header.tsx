@@ -1,3 +1,4 @@
+"use client";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -9,9 +10,15 @@ import {
 import { NavMain } from "./nav-main";
 import { navigationRoutes } from "@/lib/navRoutes";
 import Link from "next/link";
+import { useAppSelector } from "@/redux/hooks";
 
 export function SiteHeader() {
-  console.log(navigationRoutes);
+  const currentBusiness = useAppSelector((state) => state.currentBusiness);
+
+  if (!currentBusiness.ownerEmail) {
+    return <></>;
+  }
+
   return (
     <header className="flex shrink-0 items-center gap-2 border-b transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6 py-1">

@@ -5,12 +5,15 @@ import { usePathname } from "next/navigation";
 import getBaseURL from "@/lib/getBaseURL";
 import { AppStore, makeStore } from "@/redux/store";
 import { Provider } from "react-redux";
+import { CurrentBusinessState } from "@/redux/slices/currentBusinessSlice";
 
 export default function ReduxProvider({
   children,
   initialSession,
+  currentBusiness,
 }: PropsWithChildren & {
   initialSession?: Session | null;
+  currentBusiness: CurrentBusinessState | undefined;
 }) {
   const storeRef = useRef<AppStore | undefined>(undefined);
   const path = usePathname();
@@ -24,23 +27,13 @@ export default function ReduxProvider({
   if (!storeRef.current) {
     storeRef.current = makeStore({
       session: initialSession,
+      currentBusiness: currentBusiness,
 
       user: {
         ...initialSession?.user,
       },
     });
   }
-
-  // useEffect(() => {
-  //   if (initialSession) {
-  //     store.dispatch(setSession(initialSession));
-  //     if (userPermissions) {
-  //       store.dispatch(setTeamPermission(userPermissions));
-  //     }
-  //   }
-  //   // No dependencies: run once on mount
-  //   // eslint-disable-next-line
-  // }, []);
 
   return <Provider store={storeRef.current}>{children} </Provider>;
 }

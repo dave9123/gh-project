@@ -11,7 +11,7 @@ async function getBusinessData(
   backEndJWT: string
 ): Promise<CurrentBusinessState | undefined> {
   try {
-    console.log(`${process.env.BACKEND_URL}/api/business/get`, backEndJWT);
+    // console.log(`${process.env.BACKEND_URL}/api/business/get`, backEndJWT);
     const response = await fetch(
       `${process.env.BACKEND_URL}/api/business/get`,
       {
@@ -61,7 +61,10 @@ export default async function DashboardLayout({
   }
 
   return (
-    <ReduxProvider initialSession={session}>
+    <ReduxProvider
+      currentBusiness={currentBusinessData}
+      initialSession={session}
+    >
       <SidebarProvider
         style={
           {
