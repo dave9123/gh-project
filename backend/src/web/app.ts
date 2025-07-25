@@ -1,3 +1,8 @@
+import auth from "./api/auth";
+import business from "./api/business";
+import files from "./api/files";
+import orders from "./api/orders";
+
 import express from "express";
 import jwt from "jsonwebtoken";
 
@@ -8,11 +13,6 @@ declare global {
     }
   }
 }
-
-import auth from "./api/auth";
-import business from "./api/business";
-import files from "./api/files";
-import orders from "./api/orders";
 
 const app = express();
 
@@ -43,6 +43,7 @@ app.use((req, res, next) => {
       console.error("An error occured while verifying JWT", err);
       return res.sendStatus(500).json({ error: "Internal Server Error" });
     }
+    console.log("User authenticated:", user);
     req.user = user;
     next();
   });
@@ -57,5 +58,6 @@ app.get("/ping", (_, res) => res.status(200).send("Pong!"));
 
 export default function startServer() {
   const port = process.env.PORT || 3000;
+
   app.listen(port, () => console.log(`Server is running on port ${port}`));
 }
