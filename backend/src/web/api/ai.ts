@@ -135,62 +135,322 @@ router.post("/upload", upload.single("file"), async (req, res) => {
   }
 });
 
-router.get("/", (req, res) => {
+//TODO: DEFINE ALL THE FUNCTIONS HERE
+
+const functions = () => {
+  return [
+    {
+      type: "function" as const,
+      function: {
+        name: "get_products",
+        description:
+          "Fetches all available product categories and options from the backend for dynamic quoting.",
+        parameters: {
+          type: "object",
+          properties: {},
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "set_user_upload",
+        description:
+          "Handles user-uploaded files and triggers any file-based analysis (e.g. size, colors, dimensions).",
+        parameters: {
+          type: "object",
+          properties: {
+            fileUrl: {
+              type: "string",
+              description:
+                "Public URL of the uploaded file from Supabase or other storage.",
+            },
+            category: {
+              type: "string",
+              description:
+                "The product category related to this file (e.g. 'mug', 'banner').",
+            },
+          },
+          required: ["fileUrl", "category"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "calculate_quote",
+        description:
+          "Calculates the total quote based on category, quantity, material, and other parameters.",
+        parameters: {
+          type: "object",
+          properties: {
+            category: {
+              type: "string",
+              description: "Product type like mug, shirt, sticker",
+            },
+            material: {
+              type: "string",
+              description: "Material such as ceramic, vinyl, etc.",
+            },
+            quantity: {
+              type: "number",
+              description: "Number of items to print",
+            },
+            colorCount: {
+              type: "number",
+              description: "How many colors used in design",
+            },
+            sizeCm: {
+              type: "number",
+              description: "Width or surface in cm if relevant",
+            },
+            extraOptions: {
+              type: "object",
+              description: "Other optional parameters specific to product",
+              additionalProperties: { type: "string" },
+            },
+          },
+          required: ["category", "quantity"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "generate_invoice",
+        description:
+          "Creates a printable invoice or order summary for the user with current quote.",
+        parameters: {
+          type: "object",
+          properties: {
+            userEmail: {
+              type: "string",
+              description: "User's email to send invoice to",
+            },
+            quoteId: {
+              type: "string",
+              description: "ID of the previously generated quote",
+            },
+            fullName: { type: "string", description: "Customer's name" },
+          },
+          required: ["userEmail", "quoteId", "fullName"],
+        },
+      },
+    },
+    {
+      type: "function" as const,
+      function: {
+        name: "general_ask",
+        description:
+          "Handles general user questions not related to quoting or uploading.",
+        parameters: {
+          type: "object",
+          properties: {
+            question: { type: "string", description: "The user's question." },
+          },
+          required: ["question"],
+        },
+      },
+    },
+  ];
+};
+const aiFunctions = functions();
+
+// Function to execute AI function calls
+async function executeFunction(functionName: string, args: any) {
+  switch (functionName) {
+    case "get_products":
+      // Fetch products from database
+      try {
+        const products = await db.select().from(productsTable);
+        return {
+          products: products.map((p) => ({
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            basePrice: p.basePrice,
+          })),
+        };
+      } catch (error) {
+        return { error: "Failed to fetch products" };
+      }
+
+    case "set_user_upload":
+      // Handle user upload
+      return {
+        message: `File ${args.fileUrl} processed for category ${args.category}`,
+      };
+
+    case "calculate_quote":
+      // Calculate quote based on parameters
+      const basePrice = 10000; // Base price in IDR
+      const materialMultiplier = args.material === "premium" ? 1.5 : 1.0;
+      const colorMultiplier = args.colorCount ? args.colorCount * 0.2 + 1 : 1.0;
+      const sizeMultiplier = args.sizeCm ? Math.max(1, args.sizeCm / 10) : 1.0;
+
+      const totalPrice =
+        basePrice *
+        args.quantity *
+        materialMultiplier *
+        colorMultiplier *
+        sizeMultiplier;
+
+      return {
+        quote: {
+          id: crypto.randomUUID(),
+          category: args.category,
+          quantity: args.quantity,
+          material: args.material || "standard",
+          colorCount: args.colorCount || 1,
+          sizeCm: args.sizeCm || 10,
+          unitPrice: Math.round(totalPrice / args.quantity),
+          totalPrice: Math.round(totalPrice),
+          currency: "IDR",
+        },
+      };
+
+    case "generate_invoice":
+      // Generate invoice
+      return {
+        invoice: {
+          id: crypto.randomUUID(),
+          quoteId: args.quoteId,
+          customerName: args.fullName,
+          customerEmail: args.userEmail,
+          generatedAt: new Date().toISOString(),
+          status: "generated",
+        },
+      };
+
+    case "general_ask":
+      // Handle general questions
+      return {
+        response: `I understand you're asking: ${args.question}. How can I help you with your printing needs?`,
+      };
+
+    default:
+      return { error: `Unknown function: ${functionName}` };
+  }
+}
+
+export async function chatWithAI(messages: Array<any>, tools = aiFunctions) {
+  const completion = await openai.chat.completions.create({
+    model: "gpt-4",
+    messages: messages as any,
+    tools: tools as any,
+    tool_choice: "auto",
+  });
+
+  const choice = completion.choices?.[0];
+  if (!choice) {
+    throw new Error("No response from AI");
+  }
+
+  if (choice.finish_reason === "tool_calls" && choice.message.tool_calls) {
+    const toolCalls = choice.message.tool_calls;
+
+    for (const toolCall of toolCalls) {
+      const functionName = toolCall.function.name;
+      const args = JSON.parse(toolCall.function.arguments);
+      const result = await executeFunction(functionName, args);
+
+      messages.push({
+        role: "tool",
+        tool_call_id: toolCall.id,
+        content: JSON.stringify(result),
+      } as any);
+    }
+
+    return await chatWithAI(messages, tools);
+  }
+
+  return completion;
+}
+
+router.get("/", async (req, res) => {
   try {
-    const { message } = req.body;
     const { businessId } = req.query;
-    let categories: string[] = [];
+
+    if (!businessId) {
+      return res.status(400).json({ error: "businessId is required" });
+    }
+
+    // Fetch products for this business
+    const products = await db
+      .select()
+      .from(productsTable)
+      .where(eq(productsTable.business, parseInt(businessId as string, 10)));
+
+    const categories = products.map((product: any) => product.name);
+
+    res.json({
+      success: true,
+      message: "AI chat service is ready",
+      availableProducts: categories,
+      businessId: businessId,
+      endpoints: {
+        chat: "POST /ai/chat",
+        upload: "POST /ai/upload",
+      },
+    });
+  } catch (error) {
+    console.error("AI info error:", error);
+    return res.status(500).json({
+      error: "Internal server error",
+      details: process.env.NODE_ENV === "development" ? error : undefined,
+    });
+  }
+});
+
+// Chat endpoint - POST method for better practice with request body
+router.post("/chat", async (req, res) => {
+  try {
+    const { message, businessId } = req.body;
 
     if (!message || !businessId) {
       return res
         .status(400)
         .json({ error: "Message and businessId are required" });
     }
-    db.select()
+
+    // Fetch products for this business
+    const products = await db
+      .select()
       .from(productsTable)
-      .where(eq(productsTable.business, parseInt(businessId as string, 10)))
-      .then((cts: any) => {
-        categories = cts.map((category: any) => category.name);
-      });
+      .where(eq(productsTable.business, parseInt(businessId as string, 10)));
 
-    //TODO: DEFINE ALL THE FUNCTIONS HERE
+    const categories = products.map((product: any) => product.name);
 
-    const functions = () => {
-      return [
-        {
-          name: "getCategoryInfo",
-          description: "Get category information",
-          parameters: {
-            type: "object",
-            properties: {
-              userInput: {
-                type: "string",
-                description: "User input to get category information",
-                enum: categories,
-              },
-            },
-            required: ["userInput"],
-          },
-        },
-        {
-          name: "getQuote",
-          description: "Get a quote",
-          parameters: {
-            type: "object",
-            properties: {
-              userInput: {
-                type: "string",
-                description: "User input to get a quote",
-              },
-            },
-            required: ["userInput"],
-          },
-        },
-      ];
-    };
+    // Create initial message for AI
+    const messages = [
+      {
+        role: "system",
+        content: `You are a helpful printing service assistant. Available products: ${categories.join(
+          ", "
+        )}. Help users with quotes, uploads, and general questions about printing services.`,
+      },
+      {
+        role: "user",
+        content: message,
+      },
+    ];
+
+    // Call AI with the message
+    const aiResponse = await chatWithAI(messages);
+
+    res.json({
+      success: true,
+      response:
+        aiResponse.choices[0]?.message?.content || "No response generated",
+      availableProducts: categories,
+      businessId: businessId,
+    });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("AI chat error:", error);
+    return res.status(500).json({
+      error: "Internal server error",
+      details: process.env.NODE_ENV === "development" ? error : undefined,
+    });
   }
 });
 
