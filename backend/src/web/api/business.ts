@@ -35,7 +35,7 @@ router.post("/create", async (req, res) => {
         ownerEmail: user[0].email,
       });
 
-      res.send({
+      return res.send({
         message: "Business created successfully!",
         business: {
           name,
@@ -44,8 +44,6 @@ router.post("/create", async (req, res) => {
           ownerEmail,
         },
       });
-
-      return;
     }
 
     res.send({
@@ -78,7 +76,7 @@ router.get("/get", async (req, res) => {
     }
 
     const businessData = business[0]!;
-    res.send({
+    return res.send({
       business: {
         name: businessData.name,
         slug: businessData.slug,
@@ -132,7 +130,7 @@ router.post("/product", async (req, res) => {
       })
       .returning({ insertId: productsTable.id });
 
-    res.send({
+    return res.send({
       product: {
         id: result && result[0] ? result[0].insertId : 0,
         name,
@@ -195,6 +193,8 @@ router.get("/products", async (req, res) => {
       },
       message: "Products retrieved successfully",
     });
+
+    return;
   } catch (error) {
     console.error(error);
     return res.status(500).json({ error: "An unexpected error occurred" });
@@ -392,6 +392,7 @@ router.get("/product/:productId", async (req, res) => {
         currencyType: productsTable.currencyType,
         createdAt: productsTable.createdAt,
         lastModified: productsTable.lastModified,
+        formData: productsTable.formData,
       })
       .from(productsTable)
       .where(eq(productsTable.id, productIdNum))
