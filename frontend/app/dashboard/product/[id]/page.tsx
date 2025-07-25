@@ -1,4 +1,6 @@
-import QuoteFormBuilder from "@/components/QuoteformBuilder";
+import QuoteFormBuilder, {
+  FormBuilderData,
+} from "@/components/QuoteformBuilder";
 import { EmptyState } from "@/components/ui/empty-state";
 import { authOptions } from "@/lib/next-auth";
 import { ProductTypes } from "@/lib/product";
@@ -9,7 +11,7 @@ import { getServerSession } from "next-auth";
 async function getProductData(
   backEndJWT: string,
   productId: string
-): Promise<ProductTypes | undefined> {
+): Promise<(ProductTypes & { formData: FormBuilderData }) | undefined> {
   try {
     // console.log(`${process.env.BACKEND_URL}/api/business/get`, backEndJWT);
     const response = await fetch(
@@ -79,7 +81,10 @@ export default async function DashboardDefaultProductPage({
 
   return (
     <div>
-      <QuoteFormBuilder product={productData} />
+      <QuoteFormBuilder
+        // @ts-ignore
+        product={productData}
+      />
     </div>
   );
 }
