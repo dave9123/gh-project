@@ -3,10 +3,12 @@ import { combineReducers } from "redux";
 
 import userReducer from "./slices/userSlice";
 import sessionReducer from "./slices/sessionSlice";
+import currentBusinessSlice from "./slices/currentBusinessSlice";
 
 const rootReducer = combineReducers({
   session: sessionReducer,
   user: userReducer,
+  currentBusiness: currentBusinessSlice,
 });
 
 export const makeStore = (preloadedState?: Partial<RootState>) =>

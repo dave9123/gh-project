@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/sidebar";
 import { useScreenSize } from "@/lib/useScreenSize";
 import { navigationRoutes } from "@/lib/navRoutes";
+import { useAppSelector } from "@/redux/hooks";
 
 const data = {
   user: {
@@ -29,7 +30,11 @@ const data = {
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const screenSize = useScreenSize();
+  const currentBusiness = useAppSelector((state) => state.currentBusiness);
 
+  if (!currentBusiness.ownerEmail) {
+    return <></>;
+  }
   if (screenSize.greaterThan("md")) {
     return <></>;
   }
