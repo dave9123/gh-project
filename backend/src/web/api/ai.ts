@@ -1,6 +1,7 @@
 import express from "express";
 import db from "../../modules/db";
 import { OpenAI } from "openai";
+import { productsTable } from "../../db/schema";
 
 const router = express.Router();
 
@@ -20,9 +21,12 @@ router.get("/", (req, res) => {
       .json({ error: "Message and businessId are required" });
   }
 
-  db.getCategoriesByBusinessId(businessId).then((cts: any) => {
-    categories = cts.map((category: any) => category.name);
-  });
+  db.select()
+    .from(productsTable)
+    .where(productsTable.business.eq(businessId))
+    .then((cts: any) => {
+      categories = cts.map((category: any) => category.name);
+    });
 
   //TODO: DEFINE ALL THE FUNCTIONS HERE
 
