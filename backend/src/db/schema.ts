@@ -7,6 +7,7 @@ import {
   timestamp,
   boolean,
   unique,
+  jsonb,
 } from "drizzle-orm/pg-core";
 
 export const usersTable = pgTable("users", {
@@ -27,7 +28,7 @@ export const productsTable = pgTable("products", {
   description: varchar().default("").notNull(),
   basePrice: integer().notNull(),
   currencyType: varchar().default("IDR").notNull(),
-  formData: jsonb().notNull(),
+  formData: jsonb().default({}).notNull(),
 
   businessId: integer()
     .notNull()

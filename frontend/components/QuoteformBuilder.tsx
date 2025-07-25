@@ -107,7 +107,7 @@ interface FileUploadConnection {
   description: string;
 }
 
-interface FormBuilderData {
+export interface FormBuilderData {
   id?: string;
   name: string;
   description?: string;
@@ -129,7 +129,7 @@ interface SaveResponse {
 }
 
 interface QuoteFormBuilderProps {
-  product?: ProductTypes;
+  product?: (ProductTypes & { formData: FormBuilderData }) | null;
 }
 
 // Safe expression evaluator for basic math operations
@@ -785,6 +785,8 @@ const defaultFileTypeMap: { [key: string]: string[] } = {
 export default function QuoteFormBuilder({
   product,
 }: QuoteFormBuilderProps = {}) {
+  console.log(product);
+
   const router = useRouter();
   const [parameters, setParameters] = useState<Parameter[]>([]);
   const [activeTab, setActiveTab] = useState("builder");
@@ -825,73 +827,76 @@ export default function QuoteFormBuilder({
       // Always set basic product info from ProductTypes
       setFormName(product.name);
       setFormDescription(product.description);
+      let parsedFormData: Partial<FormBuilderData> = Object.assign(
+        {},
+        {
+          parameters: [],
+          currency: "USD",
+          fileConnections: [],
+          selectedFileType: "pdf",
+          fileTypeMap: defaultFileTypeMap["pdf"],
+          formValues: { quantity: "1" },
+        },
+        product.formData
+      );
 
-      // Initialize with default values
-      let parsedFormData: Partial<FormBuilderData> = {
-        parameters: [],
-        currency:
-          product.currencyType === "USD" || product.currencyType === "IDR"
-            ? product.currencyType
-            : "USD", // Fallback to USD for unsupported currencies
-        fileConnections: [],
-        selectedFileType: "pdf",
-        fileTypeMap: defaultFileTypeMap["pdf"],
-        formValues: { quantity: "1" },
-      };
+      if (product.formData) {
+        // Initialize with default values
 
-      // Try to parse formData if it exists and is not empty
-      if (product.formData && product.formData.trim() !== "") {
-        try {
-          const parsed: Partial<FormBuilderData> = JSON.parse(product.formData);
+        // Try to parse formData if it exists and is not empty
+        // if (product.formData && product.formData.trim() !== "") {
+        //   try {
+        //     const parsed: Partial<FormBuilderData> = JSON.parse(product.formData);
 
-          // Merge parsed data with defaults, keeping defaults for missing fields
-          parsedFormData = {
-            parameters: parsed.parameters || [],
-            currency:
-              parsed.currency === "USD" || parsed.currency === "IDR"
-                ? parsed.currency
-                : product.currencyType === "USD" ||
-                  product.currencyType === "IDR"
-                ? product.currencyType
-                : "USD", // Fallback chain with validation
-            fileConnections: parsed.fileConnections || [],
-            selectedFileType: parsed.selectedFileType || "pdf",
-            fileTypeMap:
-              parsed.fileTypeMap ||
-              defaultFileTypeMap[parsed.selectedFileType || "pdf"],
-            formValues: parsed.formValues || { quantity: "1" },
-          };
+        //     // Merge parsed data with defaults, keeping defaults for missing fields
+        //     parsedFormData = {
+        //       parameters: parsed.parameters || [],
+        //       currency:
+        //         parsed.currency === "USD" || parsed.currency === "IDR"
+        //           ? parsed.currency
+        //           : product.currencyType === "USD" ||
+        //             product.currencyType === "IDR"
+        //           ? product.currencyType
+        //           : "USD", // Fallback chain with validation
+        //       fileConnections: parsed.fileConnections || [],
+        //       selectedFileType: parsed.selectedFileType || "pdf",
+        //       fileTypeMap:
+        //         parsed.fileTypeMap ||
+        //         defaultFileTypeMap[parsed.selectedFileType || "pdf"],
+        //       formValues: parsed.formValues || { quantity: "1" },
+        //     };
 
-          console.log("Successfully parsed product formData");
-        } catch (error) {
-          console.warn(
-            "Failed to parse product formData, using defaults:",
-            error
-          );
-          // parsedFormData already contains defaults, so we continue with those
+        //     console.log("Successfully parsed product formData");
+        //   } catch (error) {
+        //     console.warn(
+        //       "Failed to parse product formData, using defaults:",
+        //       error
+        //     );
+        //     // parsedFormData already contains defaults, so we continue with those
+        //   }
+        // } else {
+        //   console.log("Product formData is empty or null, using default values");
+        // }
+
+        // Apply the parsed/default form data to component state
+        if (parsedFormData.parameters) {
+          setParameters(parsedFormData.parameters);
         }
-      } else {
-        console.log("Product formData is empty or null, using default values");
-      }
-
-      // Apply the parsed/default form data to component state
-      if (parsedFormData.parameters) {
-        setParameters(parsedFormData.parameters);
-      }
-      if (parsedFormData.currency) {
-        setSelectedCurrency(parsedFormData.currency);
-      }
-      if (parsedFormData.fileConnections) {
-        setFileConnections(parsedFormData.fileConnections);
-      }
-      if (parsedFormData.selectedFileType) {
-        setSelectedFileType(parsedFormData.selectedFileType);
-      }
-      if (parsedFormData.fileTypeMap) {
-        setFileTypeMap(parsedFormData.fileTypeMap);
-      }
-      if (parsedFormData.formValues) {
-        setFormValues(parsedFormData.formValues);
+        if (parsedFormData.currency) {
+          setSelectedCurrency(parsedFormData.currency);
+        }
+        if (parsedFormData.fileConnections) {
+          setFileConnections(parsedFormData.fileConnections);
+        }
+        if (parsedFormData.selectedFileType) {
+          setSelectedFileType(parsedFormData.selectedFileType);
+        }
+        if (parsedFormData.fileTypeMap) {
+          setFileTypeMap(parsedFormData.fileTypeMap);
+        }
+        if (parsedFormData.formValues) {
+          setFormValues(parsedFormData.formValues);
+        }
       }
 
       // Set as saved data for change tracking
@@ -1384,18 +1389,15 @@ export default function QuoteFormBuilder({
           const unitsPerQty = param.unitsPerQuantity || 1;
           const totalUnits = numValue * unitsPerQty;
 
-          // Unit price scales with main units if this param has unit pricing
+          // Unit price calculation: total units × unit price (no double multiplication)
           if (param.pricing.unit_price) {
-            const unitCost =
-              totalUnits * param.pricing.unit_price * mainUnitsValue;
+            const unitCost = totalUnits * param.pricing.unit_price;
             paramTotal += unitCost;
             description +=
               (description ? " + " : "") +
               `${totalUnits} ${param.unit || "units"} × ${
                 currencies[selectedCurrency].symbol
-              }${param.pricing.unit_price} × ${mainUnitsValue} ${
-                mainUnitsParam?.unit || "main units"
-              }`;
+              }${param.pricing.unit_price}`;
           }
 
           if (
@@ -1754,7 +1756,7 @@ export default function QuoteFormBuilder({
         if (param.required && param.type === "FixedOption") {
           const selectedValue = formValues[param.name];
           if (!selectedValue || selectedValue === "") {
-            throw new Error(`${param.label || param.name} is required`);
+            // throw new Error(`${param.label || param.name} is required`);
           }
 
           // Check if the selected option has sub-options and if they are required
@@ -1785,7 +1787,7 @@ export default function QuoteFormBuilder({
             value === "" ||
             value === 0
           ) {
-            throw new Error(`${param.label || param.name} is required`);
+            // throw new Error(`${param.label || param.name} is required`);
           }
         }
       }
@@ -1803,14 +1805,14 @@ export default function QuoteFormBuilder({
         description: formData.description || "",
         basePrice: 0, // You may want to calculate this from parameters
         currencyType: formData.currency,
-        formData: JSON.stringify({
+        formData: {
           parameters: formData.parameters,
           currency: formData.currency,
           fileConnections: formData.fileConnections,
           selectedFileType: formData.selectedFileType,
           fileTypeMap: formData.fileTypeMap,
           formValues: formData.formValues,
-        }),
+        },
         createdAt: formData.createdAt
           ? new Date(formData.createdAt).getTime()
           : Date.now(),
@@ -1844,7 +1846,7 @@ export default function QuoteFormBuilder({
 
       if (productResult.id) {
         // Transform ProductTypes back to FormBuilderData format
-        const parsedFormData = JSON.parse(productResult.formData);
+        const parsedFormData = productResult.formData;
         const transformedData: FormBuilderData = {
           id: productResult.id,
           name: productResult.name,
@@ -1937,7 +1939,7 @@ export default function QuoteFormBuilder({
 
       if (productResult.id) {
         // Transform ProductTypes back to FormBuilderData format
-        const parsedFormData = JSON.parse(productResult.formData);
+        const parsedFormData = productResult.formData;
         const transformedData: FormBuilderData = {
           id: productResult.id,
           name: productResult.name,
@@ -2022,15 +2024,11 @@ export default function QuoteFormBuilder({
   };
 
   const deleteProduct = async (): Promise<SaveResponse | undefined> => {
+    console.log("HEY");
     if (!lastSavedData?.id) {
       alert("No saved product to delete");
       return;
     }
-
-    const confirmDelete = window.confirm(
-      `Are you sure you want to permanently delete "${formName}"? This action cannot be undone.`
-    );
-    if (!confirmDelete) return;
 
     try {
       setIsSaving(true);
@@ -2053,7 +2051,7 @@ export default function QuoteFormBuilder({
         );
       }
 
-      redirect("/dashboard");
+      router.push("/dashboard");
     } catch (error) {
       setSaveStatus("error");
       const errorMessage =
@@ -2318,7 +2316,6 @@ Check console for complete data structure.`);
                         <DropdownMenuItem
                           onClick={handleDelete}
                           className="text-destructive"
-                          disabled={isSaving}
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
                           Delete Product
