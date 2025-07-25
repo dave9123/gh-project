@@ -22,9 +22,12 @@ router.post("/create", (req, res) => {
             return res.status(400).json({ error: "Invalid phone number format" });
         }
 
-        // db.insert(usersTable).values({
-
-        // })
+        db.insert(businessTable).values({
+            name,
+            slug,
+            phoneNumber,
+            ownerEmail
+        })
 
         res.send({
             "message": "Business created successfully!",
