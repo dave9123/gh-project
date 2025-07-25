@@ -827,7 +827,18 @@ export default function QuoteFormBuilder({
       // Always set basic product info from ProductTypes
       setFormName(product.name);
       setFormDescription(product.description);
-      let parsedFormData: Partial<FormBuilderData> = product.formData;
+      let parsedFormData: Partial<FormBuilderData> = Object.assign(
+        {},
+        {
+          parameters: [],
+          currency: "USD",
+          fileConnections: [],
+          selectedFileType: "pdf",
+          fileTypeMap: defaultFileTypeMap["pdf"],
+          formValues: { quantity: "1" },
+        },
+        product.formData
+      );
 
       if (product.formData) {
         // Initialize with default values
@@ -2013,15 +2024,11 @@ export default function QuoteFormBuilder({
   };
 
   const deleteProduct = async (): Promise<SaveResponse | undefined> => {
+    console.log("HEY");
     if (!lastSavedData?.id) {
       alert("No saved product to delete");
       return;
     }
-
-    const confirmDelete = window.confirm(
-      `Are you sure you want to permanently delete "${formName}"? This action cannot be undone.`
-    );
-    if (!confirmDelete) return;
 
     try {
       setIsSaving(true);
@@ -2044,7 +2051,7 @@ export default function QuoteFormBuilder({
         );
       }
 
-      redirect("/dashboard");
+      router.push("/dashboard");
     } catch (error) {
       setSaveStatus("error");
       const errorMessage =
@@ -2309,10 +2316,9 @@ Check console for complete data structure.`);
                         <DropdownMenuItem
                           onClick={handleDelete}
                           className="text-destructive"
-                          // disabled={isSaving}
                         >
                           <Trash2 className="w-4 h-4 mr-2" />
-                          Delete Product {isSaving}
+                          Delete Product
                         </DropdownMenuItem>
                       </>
                     )}
