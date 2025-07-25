@@ -129,9 +129,7 @@ interface SaveResponse {
 }
 
 interface QuoteFormBuilderProps {
-  product?: ProductTypes & {
-    formData: FormBuilderData;
-  };
+  product?: (ProductTypes & { formData: FormBuilderData }) | null;
 }
 
 // Safe expression evaluator for basic math operations
@@ -829,63 +827,65 @@ export default function QuoteFormBuilder({
       // Always set basic product info from ProductTypes
       setFormName(product.name);
       setFormDescription(product.description);
-
-      // Initialize with default values
       let parsedFormData: Partial<FormBuilderData> = product.formData;
 
-      // Try to parse formData if it exists and is not empty
-      // if (product.formData && product.formData.trim() !== "") {
-      //   try {
-      //     const parsed: Partial<FormBuilderData> = JSON.parse(product.formData);
+      if (product.formData) {
+        // Initialize with default values
 
-      //     // Merge parsed data with defaults, keeping defaults for missing fields
-      //     parsedFormData = {
-      //       parameters: parsed.parameters || [],
-      //       currency:
-      //         parsed.currency === "USD" || parsed.currency === "IDR"
-      //           ? parsed.currency
-      //           : product.currencyType === "USD" ||
-      //             product.currencyType === "IDR"
-      //           ? product.currencyType
-      //           : "USD", // Fallback chain with validation
-      //       fileConnections: parsed.fileConnections || [],
-      //       selectedFileType: parsed.selectedFileType || "pdf",
-      //       fileTypeMap:
-      //         parsed.fileTypeMap ||
-      //         defaultFileTypeMap[parsed.selectedFileType || "pdf"],
-      //       formValues: parsed.formValues || { quantity: "1" },
-      //     };
+        // Try to parse formData if it exists and is not empty
+        // if (product.formData && product.formData.trim() !== "") {
+        //   try {
+        //     const parsed: Partial<FormBuilderData> = JSON.parse(product.formData);
 
-      //     console.log("Successfully parsed product formData");
-      //   } catch (error) {
-      //     console.warn(
-      //       "Failed to parse product formData, using defaults:",
-      //       error
-      //     );
-      //     // parsedFormData already contains defaults, so we continue with those
-      //   }
-      // } else {
-      //   console.log("Product formData is empty or null, using default values");
-      // }
+        //     // Merge parsed data with defaults, keeping defaults for missing fields
+        //     parsedFormData = {
+        //       parameters: parsed.parameters || [],
+        //       currency:
+        //         parsed.currency === "USD" || parsed.currency === "IDR"
+        //           ? parsed.currency
+        //           : product.currencyType === "USD" ||
+        //             product.currencyType === "IDR"
+        //           ? product.currencyType
+        //           : "USD", // Fallback chain with validation
+        //       fileConnections: parsed.fileConnections || [],
+        //       selectedFileType: parsed.selectedFileType || "pdf",
+        //       fileTypeMap:
+        //         parsed.fileTypeMap ||
+        //         defaultFileTypeMap[parsed.selectedFileType || "pdf"],
+        //       formValues: parsed.formValues || { quantity: "1" },
+        //     };
 
-      // Apply the parsed/default form data to component state
-      if (parsedFormData.parameters) {
-        setParameters(parsedFormData.parameters);
-      }
-      if (parsedFormData.currency) {
-        setSelectedCurrency(parsedFormData.currency);
-      }
-      if (parsedFormData.fileConnections) {
-        setFileConnections(parsedFormData.fileConnections);
-      }
-      if (parsedFormData.selectedFileType) {
-        setSelectedFileType(parsedFormData.selectedFileType);
-      }
-      if (parsedFormData.fileTypeMap) {
-        setFileTypeMap(parsedFormData.fileTypeMap);
-      }
-      if (parsedFormData.formValues) {
-        setFormValues(parsedFormData.formValues);
+        //     console.log("Successfully parsed product formData");
+        //   } catch (error) {
+        //     console.warn(
+        //       "Failed to parse product formData, using defaults:",
+        //       error
+        //     );
+        //     // parsedFormData already contains defaults, so we continue with those
+        //   }
+        // } else {
+        //   console.log("Product formData is empty or null, using default values");
+        // }
+
+        // Apply the parsed/default form data to component state
+        if (parsedFormData.parameters) {
+          setParameters(parsedFormData.parameters);
+        }
+        if (parsedFormData.currency) {
+          setSelectedCurrency(parsedFormData.currency);
+        }
+        if (parsedFormData.fileConnections) {
+          setFileConnections(parsedFormData.fileConnections);
+        }
+        if (parsedFormData.selectedFileType) {
+          setSelectedFileType(parsedFormData.selectedFileType);
+        }
+        if (parsedFormData.fileTypeMap) {
+          setFileTypeMap(parsedFormData.fileTypeMap);
+        }
+        if (parsedFormData.formValues) {
+          setFormValues(parsedFormData.formValues);
+        }
       }
 
       // Set as saved data for change tracking
@@ -1794,14 +1794,14 @@ export default function QuoteFormBuilder({
         description: formData.description || "",
         basePrice: 0, // You may want to calculate this from parameters
         currencyType: formData.currency,
-        formData: JSON.stringify({
+        formData: {
           parameters: formData.parameters,
           currency: formData.currency,
           fileConnections: formData.fileConnections,
           selectedFileType: formData.selectedFileType,
           fileTypeMap: formData.fileTypeMap,
           formValues: formData.formValues,
-        }),
+        },
         createdAt: formData.createdAt
           ? new Date(formData.createdAt).getTime()
           : Date.now(),
@@ -1835,7 +1835,7 @@ export default function QuoteFormBuilder({
 
       if (productResult.id) {
         // Transform ProductTypes back to FormBuilderData format
-        const parsedFormData = JSON.parse(productResult.formData);
+        const parsedFormData = productResult.formData;
         const transformedData: FormBuilderData = {
           id: productResult.id,
           name: productResult.name,
@@ -1928,7 +1928,7 @@ export default function QuoteFormBuilder({
 
       if (productResult.id) {
         // Transform ProductTypes back to FormBuilderData format
-        const parsedFormData = JSON.parse(productResult.formData);
+        const parsedFormData = productResult.formData;
         const transformedData: FormBuilderData = {
           id: productResult.id,
           name: productResult.name,

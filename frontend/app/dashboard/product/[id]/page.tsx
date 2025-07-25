@@ -11,7 +11,9 @@ import { getServerSession } from "next-auth";
 async function getProductData(
   backEndJWT: string,
   productId: string
-): Promise<(ProductTypes & { formData: FormBuilderData }) | undefined> {
+): Promise<
+  (ProductTypes & { formData: FormBuilderData | undefined | null }) | undefined
+> {
   try {
     // console.log(`${process.env.BACKEND_URL}/api/business/get`, backEndJWT);
     const response = await fetch(
