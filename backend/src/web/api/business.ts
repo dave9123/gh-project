@@ -230,6 +230,14 @@ router.put("/product/:productId", async (req, res) => {
       return res.status(500).json({ error: "Failed to update product" });
     }
 
+    if (result[0]) {
+      res.send({
+        message: "Product updated successfully",
+        product: result[0],
+        id: result[0].id,
+      });
+    }
+
     res.send({
       message: "Product updated successfully",
       product: result[0],
