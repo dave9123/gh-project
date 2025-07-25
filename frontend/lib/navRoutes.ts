@@ -8,12 +8,12 @@ export const navigationRoutes = [
   },
   {
     title: "Orders",
-    url: "/orders",
+    url: "orders",
     icon: IconCoin,
   },
   {
     title: "Transactions",
-    url: "/transactions",
+    url: "transactions",
     icon: IconCoin,
   },
 ];

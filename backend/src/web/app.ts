@@ -18,14 +18,17 @@ const app = express();
 
 app.use(express.json());
 app.use((req, res, next) => {
+    if (req.path.startsWith("/api/auth/oauth")) return next();
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
     if (token == null) return res.sendStatus(401);
 
     jwt.verify(token, process.env.JWT_SECRET as string, (err: any, user: any) => {
-        console.error(err);
-        if (err) return res.sendStatus(403);
+        if (err) {
+            console.error("An error occured while verifying JWT", err);
+            return res.sendStatus(500).json({ error: "Internal Server Error" });
+        }
         req.user = user;
         next();
     })
