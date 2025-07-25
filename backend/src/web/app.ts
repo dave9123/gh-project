@@ -3,6 +3,7 @@ import auth from "./api/auth";
 import business from "./api/business";
 import files from "./api/files";
 import orders from "./api/orders";
+import admin from "./api/admin";
 
 import express from "express";
 import jwt from "jsonwebtoken";
@@ -50,6 +51,7 @@ app.use((req, res, next) => {
     });
 });
 
+app.use("/api/admin", admin);
 app.use("/api/ai", ai);
 app.use("/api/orders", orders);
 app.use("/api/auth", auth);

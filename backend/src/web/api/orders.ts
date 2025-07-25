@@ -7,7 +7,7 @@ router.post("/", async (req, res) => {
     try {
         const { businessId, fileId, name, userId, productId, quantity, price, currency, total, status } = req.body;
 
-        const insertedOrder = await db.insert(ordersTable).values({
+        await db.insert(ordersTable).values({
             businessId,
             fileId,
             name,
@@ -17,7 +17,7 @@ router.post("/", async (req, res) => {
             totalPrice: total,
             currency,
             status
-        })
+        });
 
         res.status(201).json({ message: "Order created successfully" });
     } catch (error) {
