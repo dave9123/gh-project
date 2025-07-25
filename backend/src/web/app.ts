@@ -4,6 +4,7 @@ import business from "./api/business";
 import files from "./api/files";
 import orders from "./api/orders";
 import admin from "./api/admin";
+import public_api from "./api/public";
 
 import express from "express";
 import jwt from "jsonwebtoken";
@@ -30,6 +31,9 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 app.get("/ping", (_, res) => res.status(200).send("Pong!"));
+
+app.use("/public", public_api);
+
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/auth")) return next();
   if (req.path.startsWith("/api/ai")) return next();
