@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { PropsWithChildren } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -12,7 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { ShoppingBag, MessageCircle, Package, ArrowLeft } from "lucide-react";
 import { OrderProductUI } from "@/components/order-product-ui";
-import { FormDataT } from "@/lib/product";
+import { FormDataT, ProductTypes } from "@/lib/product";
 
 type BusinessEntity = {
   business: {
@@ -20,22 +20,12 @@ type BusinessEntity = {
     slug: string;
     id: number;
   };
-  products: {
-    id: number;
-    name: string;
-    description: string;
-    basePrice: number;
-    currencyType: string;
-    businessId: number;
-    createdAt: string;
-    lastModified: string;
-    formData: FormDataT;
-  }[];
+  products: ProductTypes[];
 };
 
 export function BusinessWelcomeClient({
   businessData,
-}: {
+}: PropsWithChildren & {
   businessData: BusinessEntity;
 }) {
   const [showProducts, setShowProducts] = React.useState(false);

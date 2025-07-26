@@ -1,4 +1,7 @@
 import { getServerSession } from "next-auth";
+import { BusinessWelcomeClient } from "./components/BusinessWelcomeClient";
+import { ProductTypes } from "@/lib/product";
+import { EmptyState } from "@/components/ui/empty-state";
 
 type BusinessEntity = {
   business: {
@@ -6,18 +9,7 @@ type BusinessEntity = {
     slug: string;
     id: number;
   };
-  products: [
-    {
-      id: number;
-      name: string;
-      description: string;
-      basePrice: number;
-      currencyType: string;
-      businessId: number;
-      createdAt: string;
-      lastModified: string;
-    }
-  ];
+  products: ProductTypes[];
 };
 async function getBusinessData(
   OrderPageSlug: string
@@ -65,5 +57,22 @@ export default async function OrderPageSlug({
   console.log("businessData", businessData);
 
   console.log("OrderPageSlug params:", businessData);
-  return <div>hey</div>;
+  if (!businessData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <EmptyState
+          title="Business not found"
+          description="We couldn't find the business you were looking for."
+        />
+      </div>
+    );
+  }
+
+  if (businessData) {
+    return (
+      <BusinessWelcomeClient businessData={businessData}>
+        {children}
+      </BusinessWelcomeClient>
+    );
+  }
 }
