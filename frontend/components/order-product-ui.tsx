@@ -23,7 +23,7 @@ import {
   Copy,
   Trash2,
 } from "lucide-react";
-import { FormDataT } from "@/lib/product";
+import { FormDataT, ProductTypes } from "@/lib/product";
 
 type ProductWithFormData = {
   id: number;
@@ -38,7 +38,7 @@ type ProductWithFormData = {
 };
 
 type OrderProductUIProps = {
-  product: ProductWithFormData;
+  product: ProductTypes;
   onBack: () => void;
 };
 
