@@ -11,8 +11,8 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ShoppingBag, MessageCircle, Package, ArrowLeft } from "lucide-react";
-import { OrderProductUI } from "@/components/order-product-ui";
-import { FormDataT, ProductTypes } from "@/lib/product";
+import ModernOrderUI from "@/components/modern-order-ui";
+import { ProductTypes } from "@/lib/product";
 
 type BusinessEntity = {
   business: {
@@ -32,12 +32,23 @@ export function BusinessWelcomeClient({
   const [selectedProduct, setSelectedProduct] = React.useState<
     BusinessEntity["products"][0] | null
   >(null);
+  const [showMultiOrder, setShowMultiOrder] = React.useState(false);
+
+  // If showing multi-product order UI
+  if (showMultiOrder) {
+    return (
+      <ModernOrderUI
+        availableProducts={businessData.products}
+        onBack={() => setShowMultiOrder(false)}
+      />
+    );
+  }
 
   // If a specific product is selected, show the order configuration
   if (selectedProduct) {
     return (
-      <OrderProductUI
-        product={selectedProduct}
+      <ModernOrderUI
+        availableProducts={[selectedProduct]}
         onBack={() => setSelectedProduct(null)}
       />
     );
@@ -49,6 +60,7 @@ export function BusinessWelcomeClient({
         businessData={businessData}
         onBack={() => setShowProducts(false)}
         onSelectProduct={setSelectedProduct}
+        onStartMultiOrder={() => setShowMultiOrder(true)}
       />
     );
   }
@@ -87,6 +99,17 @@ export function BusinessWelcomeClient({
               window.location.href = `/chat?business=${businessData.business.slug}`;
             }}
           />
+
+          {/* Show direct order button if products are available */}
+          {businessData.products.length > 0 && (
+            <BusinessActionButton
+              title="Quick Order"
+              description="Start ordering directly"
+              icon={<Package className="h-8 w-8" />}
+              action="order"
+              onClick={() => setShowMultiOrder(true)}
+            />
+          )}
         </div>
 
         {/* Business Info */}
@@ -112,7 +135,7 @@ function BusinessActionButton({
   title: string;
   description: string;
   icon: React.ReactNode;
-  action: "products" | "chat";
+  action: "products" | "chat" | "order";
   onClick: () => void;
 }) {
   return (
@@ -129,7 +152,11 @@ function BusinessActionButton({
       </CardHeader>
       <CardContent>
         <Button className="w-full" size="lg">
-          {action === "products" ? "View Products" : "Start Chat"}
+          {action === "products"
+            ? "View Products"
+            : action === "chat"
+            ? "Start Chat"
+            : "Start Order"}
         </Button>
       </CardContent>
     </Card>
@@ -140,10 +167,12 @@ function ProductsView({
   businessData,
   onBack,
   onSelectProduct,
+  onStartMultiOrder,
 }: {
   businessData: BusinessEntity;
   onBack: () => void;
   onSelectProduct: (product: BusinessEntity["products"][0]) => void;
+  onStartMultiOrder: () => void;
 }) {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800">
@@ -163,6 +192,18 @@ function ProductsView({
               {businessData.products.length !== 1 ? "s" : ""} available
             </p>
           </div>
+        </div>
+
+        {/* Multi-Product Order Button */}
+        <div className="flex justify-center mb-8">
+          <Button
+            onClick={onStartMultiOrder}
+            size="lg"
+            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white"
+          >
+            <ShoppingBag className="mr-2 h-5 w-5" />
+            Start Multi-Product Order
+          </Button>
         </div>
 
         {/* Products Grid */}

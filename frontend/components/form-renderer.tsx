@@ -592,13 +592,13 @@ export default function FormRenderer({
                             disabled={readOnly}
                           >
                             <SelectTrigger
-                              className={
+                              className={`w-full ${
                                 param.required &&
                                 (!formValues[param.name] ||
                                   formValues[param.name] === "")
                                   ? "border-destructive ring-destructive/20 ring-2"
                                   : ""
-                              }
+                              }`}
                             >
                               <SelectValue
                                 placeholder={
@@ -606,12 +606,13 @@ export default function FormRenderer({
                                     ? "Please select an option (Required)"
                                     : "Select an option"
                                 }
+                                className="truncate"
                               />
                             </SelectTrigger>
-                            <SelectContent>
+                            <SelectContent className="max-w-[400px]">
                               {!param.required && (
                                 <SelectItem value="__none__">
-                                  <span className="text-muted-foreground italic">
+                                  <span className="text-muted-foreground italic truncate">
                                     None (clear selection)
                                   </span>
                                 </SelectItem>
@@ -629,11 +630,14 @@ export default function FormRenderer({
                                     <SelectItem
                                       key={`${param.id}-${index}`}
                                       value={option.value}
+                                      className="max-w-none"
                                     >
-                                      <div className="flex flex-col">
-                                        <span>{option.label}</span>
+                                      <div className="flex flex-col min-w-0 w-full">
+                                        <span className="truncate font-medium">
+                                          {option.label}
+                                        </span>
                                         {option.description && (
-                                          <span className="text-xs text-muted-foreground">
+                                          <span className="text-start text-xs text-muted-foreground truncate mt-1">
                                             {option.description}
                                           </span>
                                         )}
