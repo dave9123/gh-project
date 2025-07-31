@@ -11,9 +11,9 @@ export const navigationRoutes = [
     url: "orders",
     icon: IconCoin,
   },
-  {
-    title: "Transactions",
-    url: "transactions",
-    icon: IconCoin,
-  },
+  // {
+  //   title: "Transactions",
+  //   url: "transactions",
+  //   icon: IconCoin,
+  // },
 ];
