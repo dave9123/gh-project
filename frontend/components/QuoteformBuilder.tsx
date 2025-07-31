@@ -4145,26 +4145,83 @@ Check console for complete data structure.`);
                                     <SelectValue placeholder="Select metadata" />
                                   </SelectTrigger>
                                   <SelectContent>
-                                    {fileMetadata &&
-                                      Object.keys(fileMetadata).map((key) => (
-                                        <SelectItem key={key} value={key}>
-                                          <div className="flex items-center justify-between w-full">
-                                            <span className="capitalize">
-                                              {key
-                                                .replace(/([A-Z])/g, " $1")
-                                                .toLowerCase()}
-                                            </span>
-                                            <span className="text-xs text-muted-foreground ml-2">
-                                              {typeof fileMetadata[key] ===
-                                              "number"
-                                                ? fileMetadata[
-                                                    key
-                                                  ].toLocaleString()
-                                                : String(fileMetadata[key])}
-                                            </span>
-                                          </div>
-                                        </SelectItem>
-                                      ))}
+                                    {fileMetadata
+                                      ? Object.keys(fileMetadata).map((key) => (
+                                          <SelectItem key={key} value={key}>
+                                            <div className="flex items-center justify-between w-full">
+                                              <span className="capitalize">
+                                                {key
+                                                  .replace(/([A-Z])/g, " $1")
+                                                  .toLowerCase()}
+                                              </span>
+                                              <span className="text-xs text-muted-foreground ml-2">
+                                                {typeof fileMetadata[key] ===
+                                                "number"
+                                                  ? fileMetadata[
+                                                      key
+                                                    ].toLocaleString()
+                                                  : String(fileMetadata[key])}
+                                              </span>
+                                            </div>
+                                          </SelectItem>
+                                        ))
+                                      : // Show common metadata fields based on selected file type
+                                        (() => {
+                                          const commonFields: Record<
+                                            string,
+                                            string[]
+                                          > = {
+                                            pdf: [
+                                              "pages",
+                                              "fileName",
+                                              "sizeValue",
+                                              "sizeCategory",
+                                            ],
+                                            images: [
+                                              "width",
+                                              "height",
+                                              "aspectRatio",
+                                              "megapixels",
+                                              "fileName",
+                                              "sizeValue",
+                                            ],
+                                            "3d": [
+                                              "volume",
+                                              "weightGrams",
+                                              "triangles",
+                                              "vertices",
+                                              "faces",
+                                              "fileName",
+                                              "sizeValue",
+                                            ],
+                                            documents: [
+                                              "lines",
+                                              "words",
+                                              "characters",
+                                              "fileName",
+                                              "sizeValue",
+                                            ],
+                                          };
+                                          const fields =
+                                            selectedFileType &&
+                                            commonFields[selectedFileType]
+                                              ? commonFields[selectedFileType]
+                                              : ["fileName", "sizeValue"];
+                                          return fields.map((key) => (
+                                            <SelectItem key={key} value={key}>
+                                              <div className="flex items-center justify-between w-full">
+                                                <span className="capitalize">
+                                                  {key
+                                                    .replace(/([A-Z])/g, " $1")
+                                                    .toLowerCase()}
+                                                </span>
+                                                <span className="text-xs text-muted-foreground ml-2">
+                                                  (no file uploaded)
+                                                </span>
+                                              </div>
+                                            </SelectItem>
+                                          ));
+                                        })()}
                                   </SelectContent>
                                 </Select>
                               </div>
@@ -4222,13 +4279,34 @@ Check console for complete data structure.`);
                             <div className="flex items-center justify-between pt-2">
                               <div className="text-xs text-muted-foreground">
                                 {connection.metadataKey &&
-                                connection.parameterName &&
-                                fileMetadata ? (
+                                connection.parameterName ? (
                                   <>
                                     Maps{" "}
-                                    <strong>{connection.metadataKey}</strong> (
-                                    {fileMetadata[connection.metadataKey]}) →{" "}
+                                    <strong>{connection.metadataKey}</strong>
+                                    {fileMetadata &&
+                                    fileMetadata[connection.metadataKey] ? (
+                                      <>
+                                        {" "}
+                                        ({fileMetadata[connection.metadataKey]})
+                                      </>
+                                    ) : (
+                                      <> (no file uploaded)</>
+                                    )}{" "}
+                                    →{" "}
                                     <strong>{connection.parameterName}</strong>
+                                  </>
+                                ) : connection.metadataKey ? (
+                                  <>
+                                    Metadata field{" "}
+                                    <strong>{connection.metadataKey}</strong>{" "}
+                                    selected - choose a parameter to map to
+                                  </>
+                                ) : connection.parameterName ? (
+                                  <>
+                                    Parameter{" "}
+                                    <strong>{connection.parameterName}</strong>{" "}
+                                    selected - choose a metadata field to map
+                                    from
                                   </>
                                 ) : (
                                   "Configure metadata field and parameter to create mapping"
@@ -4240,12 +4318,13 @@ Check console for complete data structure.`);
                                 onClick={() => applyFileConnection(connection)}
                                 disabled={
                                   !connection.metadataKey ||
-                                  !connection.parameterName ||
-                                  !fileMetadata
+                                  !connection.parameterName
                                 }
                                 className="h-8 text-xs"
                               >
-                                Apply Now
+                                {fileMetadata
+                                  ? "Apply Now"
+                                  : "Connection Ready"}
                               </Button>
                             </div>
                           </div>
