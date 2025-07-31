@@ -990,7 +990,11 @@ export default function FormRenderer({
                                                 {subOption.pricingScope ===
                                                 "per_qty"
                                                   ? "per item"
-                                                  : "per unit"}
+                                                  : `per ${
+                                                      parameters.find(
+                                                        (p) => p.isMainUnits
+                                                      )?.unit || "unit"
+                                                    }`}
                                               </span>
                                             )}
                                         </div>
@@ -1000,7 +1004,10 @@ export default function FormRenderer({
                                             variant="secondary"
                                             className="text-xs ml-auto"
                                           >
-                                            Per Unit
+                                            Per{" "}
+                                            {parameters.find(
+                                              (p) => p.isMainUnits
+                                            )?.unit || "Unit"}
                                           </Badge>
                                         )}
                                       </Label>
@@ -1180,7 +1187,11 @@ export default function FormRenderer({
                       return quantity > 1 ? (
                         <>
                           <div className="flex justify-between items-center text-base">
-                            <span>Price per unit</span>
+                            <span>
+                              Price per{" "}
+                              {parameters.find((p) => p.isMainUnits)?.unit ||
+                                "unit"}
+                            </span>
                             <span className="font-mono">
                               {currencies[currency].symbol}
                               <NumberFlow
