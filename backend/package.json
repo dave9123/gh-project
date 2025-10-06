@@ -1,5 +1,6 @@
 {
     "scripts": {
+        "start": "bun dist/index.js",
         "dev": "bun src/index.ts",
         "nodemondev": "nodemon --exec ts-node src/index.ts",
         "build": "tsc -p tsconfig.json",
