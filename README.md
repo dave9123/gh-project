@@ -35,8 +35,12 @@ We’re proud that we are able to finish this project in time (aside from the sl
 We learned how teamwork can become really helpful as long as you communicate. We believe that communication is really important in teamwork.
 From the technical side, because every person here kind of came from different background of engineering, we learned a lot of stuff from each other.
 
-## What's next for InstaQuote?
-We hope to be able to make InstaQuote used by printing services from all around the world while including more features one step at a time.
+## How to setup
+
+1. Clone this repository by running `git clone https://github.com/dave9123/gh-project`
+2. In frontend and backend folder, run `pnpm i` to get deps
+3. Copy `.env.example` to `.env` and fill the required environment variables
+4. Run `pnpm dev` in both frontend and backend folder
 
 ## Credits & Attributes
 
