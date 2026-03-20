@@ -11,6 +11,10 @@ export async function PUT(
   const backendJWT = cookieStore.get("x-backend-jwt");
   const { id: productId } = await params;
 
+  if (!backendJWT?.value) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   // console.log(` ${backendJWT?.name} ${backendJWT?.value}`);
 
   const apiRes = await fetch(
@@ -19,7 +23,7 @@ export async function PUT(
       method: "PUT",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${backendJWT?.value}`,
+        Authorization: `Bearer ${backendJWT.value}`,
         ...(process.env.INTERNAL_API_KEY && {
           "X-API-KEY": process.env.INTERNAL_API_KEY,
         }),
@@ -47,6 +51,10 @@ export async function DELETE(
   const backendJWT = cookieStore.get("x-backend-jwt");
   const { id: productId } = await params;
 
+  if (!backendJWT?.value) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   // console.log(` ${backendJWT?.name} ${backendJWT?.value}`);
 
   const apiRes = await fetch(
@@ -55,7 +63,7 @@ export async function DELETE(
       method: "DELETE",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${backendJWT?.value}`,
+        Authorization: `Bearer ${backendJWT.value}`,
         ...(process.env.INTERNAL_API_KEY && {
           "X-API-KEY": process.env.INTERNAL_API_KEY,
         }),

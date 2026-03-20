@@ -41,14 +41,21 @@ app.use((req, res, next) => {
 
   console.log("Request received:", req.method, req.path, req.headers);
   const authHeader = req.headers["authorization"];
-  const token = authHeader && authHeader.split(" ")[1];
 
-  if (token == null) return res.sendStatus(401);
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Missing or invalid authorization header" });
+  }
+
+  const token = authHeader.slice("Bearer ".length).trim();
+
+  if (!token || token === "undefined" || token === "null") {
+    return res.status(401).json({ error: "Token is missing" });
+  }
 
   jwt.verify(token, process.env.JWT_SECRET as string, (err: any, user: any) => {
     if (err) {
-      console.error("An error occured while verifying JWT", err);
-      return res.status(500).json({ error: "Internal Server Error" });
+      console.error("Invalid JWT", err);
+      return res.status(401).json({ error: "Invalid token" });
     }
     console.log("User authenticated:", user);
     req.user = user;

@@ -7,6 +7,10 @@ export async function POST(req: NextRequest) {
   const cookieStore = await cookies();
   const backendJWT = cookieStore.get("x-backend-jwt");
 
+  if (!backendJWT?.value) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   // console.log(` ${backendJWT?.name} ${backendJWT?.value}`);
 
   const apiRes = await fetch(
@@ -15,7 +19,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${backendJWT?.value}`,
+        Authorization: `Bearer ${backendJWT.value}`,
         ...(process.env.INTERNAL_API_KEY && {
           "X-API-KEY": process.env.INTERNAL_API_KEY,
         }),
